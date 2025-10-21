@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted, watch } from 'vue'
+import { ref, onMounted, watch, nextTick } from 'vue'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 
@@ -44,6 +44,8 @@ onMounted(() => {
     }
     document.head.appendChild(script)
   }
+
+  // 不再同步父文档主题：iframe 固定浅色
 })
 
 function renderMathJax() {
@@ -58,7 +60,6 @@ function renderMathJax() {
 
 // 轻量渲染：仅在流式阶段执行，避免重型 DOM 与脚本注入
 async function renderLight() {
-  // 在流式阶段标记为未完成，展示“处理中...”提示
   // 仅当存在 htmath 片段时才显示加载指示
   const hasOpenOrClosed = /<htmath>[\s\S]*?$|<htmath>[\s\S]*?<\/htmath>/i.test(props.content)
   hasHtmathInContent.value = hasOpenOrClosed
@@ -66,17 +67,16 @@ async function renderLight() {
   // 针对流式内容，提前占位 <htmath>，在闭合标签出现后再异步注入 iframe
   const { replacedText, tasks } = processStreamingHtmath(props.content)
   renderedContent.value = await parseMarkdown(replacedText)
-  // 闭合后再执行 iframe 注入，避免卡住主线程
+  // 闭合后立即（在本次 DOM 更新完成后）注入 iframe，确保与后续文本同步呈现
   if (tasks.length) {
-    setTimeout(() => {
-      tasks.forEach(({ id, html }) => {
-        const prev = iframeContentCache.get(id)
-        if (prev !== html) {
-          iframeContentCache.set(id, html)
-          insertHtmlToDom(id, html)
-        }
-      })
-    }, 0)
+    await nextTick()
+    tasks.forEach(({ id, html }) => {
+      const prev = iframeContentCache.get(id)
+      if (prev !== html) {
+        iframeContentCache.set(id, html)
+        insertHtmlToDom(id, html)
+      }
+    })
   }
   // 其他重处理（MathJax/<draw> 等）在流式结束时的完整渲染中统一处理
 }
@@ -195,15 +195,26 @@ function insertHtmlToDom(id, htmlContent) {
         setTimeout(send, 0);
       })();<\/script>`
 
+    // 固定浅色基础样式
+    const lightBaseStyle = `
+      <style>
+        :root { color-scheme: light; }
+        html, body { background: #ffffff; color: #111; }
+        a { color: #1a73e8; }
+        table { border-color: #e5e7eb; }
+        pre, code { background: #f8fafc; color: #0f172a; }
+      </style>`
+
     let srcdocHtml = htmlContent
     if (/<html[\s\S]*<\/html>/i.test(srcdocHtml)) {
       if (/<\/body>/i.test(srcdocHtml)) {
+        srcdocHtml = srcdocHtml.replace(/<\/head>/i, `${lightBaseStyle}</head>`)
         srcdocHtml = srcdocHtml.replace(/<\/body>/i, `${resizeScript}</body>`)
       } else {
-        srcdocHtml = srcdocHtml + resizeScript
+        srcdocHtml = lightBaseStyle + srcdocHtml + resizeScript
       }
     } else {
-      srcdocHtml = `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">${resizeScript}</head><body>${srcdocHtml}</body></html>`
+      srcdocHtml = `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">${lightBaseStyle}${resizeScript}</head><body>${srcdocHtml}</body></html>`
     }
 
     const iframe = document.createElement('iframe')
@@ -289,13 +300,23 @@ function processStreamingHtmath(text) {
 
 // 流式模式下，使用防抖渲染；非流式模式立即渲染
 let renderTimer = null
+let prevClosedCount = 0
 watch(() => props.content, (newVal, oldVal) => {
   if (props.streaming) {
-    // 流式模式：防抖执行轻量渲染，避免卡顿
-    if (renderTimer) clearTimeout(renderTimer)
-    renderTimer = setTimeout(() => {
+    const closedMatches = newVal.match(/<htmath>[\s\S]*?<\/htmath>/gi) || []
+    const closedCount = closedMatches.length
+    const hasNewClosed = closedCount > prevClosedCount
+    // 若新闭合的 htmath 出现，立即渲染以与后续文本同步；否则采用轻量防抖
+    if (hasNewClosed) {
+      prevClosedCount = closedCount
+      if (renderTimer) clearTimeout(renderTimer)
       renderLight()
-    }, 80)
+    } else {
+      if (renderTimer) clearTimeout(renderTimer)
+      renderTimer = setTimeout(() => {
+        renderLight()
+      }, 80)
+    }
   } else {
     // 非流式模式：立即完整渲染
     renderContent()
@@ -316,9 +337,6 @@ watch(() => props.streaming, (now, prev) => {
 <template>
   <div class="markdown-container">
     <div v-html="renderedContent"></div>
-    <div v-if="!processingComplete && hasHtmathInContent" class="processing-indicator">
-      <span>处理中...</span>
-    </div>
   </div>
 </template>
 
@@ -349,7 +367,7 @@ watch(() => props.streaming, (now, prev) => {
   font-weight: 600;
   line-height: 1.25;
   text-align: left;
-  color: #1a73e8;
+  color: #81abe2;
 }
 
 .markdown-container p {
@@ -551,5 +569,4 @@ table tr:nth-child(even) {
   100% { opacity: 0.6; }
 }
 
-/* 使用全局主题变量，无需根据系统偏好再覆盖 */
 </style>
