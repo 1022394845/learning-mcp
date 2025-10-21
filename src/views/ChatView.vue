@@ -206,30 +206,8 @@
       </div>
     </div>
 
-    <!-- 设置对话框 (预留) -->
-    <div v-if="showSettings" class="settings-modal" @click.self="showSettings = false">
-      <div class="settings-content">
-        <div class="settings-header">
-          <h3>设置</h3>
-          <button class="close-btn" @click="showSettings = false">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <line x1="18" y1="6" x2="6" y2="18"/>
-              <line x1="6" y1="6" x2="18" y2="18"/>
-            </svg>
-          </button>
-        </div>
-        <div class="settings-body">
-          <div class="setting-item">
-            <label>API 地址</label>
-            <input v-model="apiUrl" type="text" placeholder="http://localhost:10001/api/v1/chat/sse" />
-          </div>
-          <div class="setting-item">
-            <label>模型参数 (预留扩展)</label>
-            <p class="setting-description">未来可配置温度、top_p 等参数</p>
-          </div>
-        </div>
-      </div>
-    </div>
+    <!-- 设置对话框组件 -->
+    <SettingsModal v-model:visible="showSettings" v-model:apiUrl="apiUrl" />
   </div>
 </template>
 
@@ -238,6 +216,7 @@ import { ref, computed, onMounted, nextTick, watch } from 'vue'
 import ChatSidebar from '../components/ChatSidebar.vue'
 import ToolBar from '../components/ToolBar.vue'
 import MarkdownRenderer from '../components/MarkdownRenderer.vue'
+import SettingsModal from '../components/SettingsModal.vue'
 import { useChat } from '../composables/useChat'
 import { useToast } from '../composables/useToast'
 import { useConfirm } from '../composables/useConfirm'
@@ -713,16 +692,7 @@ function buildStandaloneHtml(title, bodyHtml) {
 .sending-spinner { width: 16px; height: 16px; border: 2px solid rgba(255,255,255,.3); border-top-color: var(--fg); border-radius: 50%; animation: spin .8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
-/* 设置模态框 */
-.settings-modal { position: fixed; inset: 0; background: rgba(0,0,0,.5); display: flex; align-items: center; justify-content: center; z-index: 1000; backdrop-filter: blur(2px); }
-.settings-content { background: var(--bg-elev-1); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 20px; max-width: 520px; width: 92%; max-height: 80vh; overflow-y: auto; box-shadow: var(--shadow); }
-.settings-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
-.settings-header h3 { margin: 0; font-size: 18px; color: var(--fg); }
-.close-btn { padding: 6px; background: var(--bg-elev-2); border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--fg); cursor: pointer; }
-.setting-item { margin-bottom: 16px; }
-.setting-item label { display: block; font-size: 13px; font-weight: 700; color: var(--fg); margin-bottom: 8px; }
-.setting-item input { width: 100%; padding: 10px 12px; border-radius: var(--radius-sm); }
-.setting-description { font-size: 12px; color: var(--fg-dim); margin: 0; }
+/* 设置模态框样式已迁移至 SettingsModal 组件 */
 
 /* 滚动条 */
 .messages-container::-webkit-scrollbar { width: 8px; }
