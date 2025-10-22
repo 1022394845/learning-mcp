@@ -167,15 +167,6 @@ export const sandboxConfig = {
 }
 
 /**
- * 获取所有启用的库（已废弃，使用 useLibraryCache 代替）
- * @deprecated 使用 useLibraryCache().allLibs.filter(lib => lib.enabled) 代替
- */
-export function getEnabledLibs() {
-  console.warn('getEnabledLibs() 已废弃，请使用 useLibraryCache() composable')
-  return visualizationLibs.filter(lib => lib.enabled)
-}
-
-/**
  * 根据 ID 获取库配置
  */
 export function getLibById(id) {
@@ -190,20 +181,6 @@ export function getLibByGlobalName(globalName) {
 }
 
 /**
- * 启用或禁用库（已废弃，使用 useLibraryCache 代替）
- * @deprecated 使用 useLibraryCache().toggleLibrary() 代替
- */
-export function toggleLib(id, enabled) {
-  console.warn('toggleLib() 已废弃，请使用 useLibraryCache().toggleLibrary() 代替')
-  const lib = getLibById(id)
-  if (lib) {
-    lib.enabled = enabled
-    return true
-  }
-  return false
-}
-
-/**
  * 获取所有库的正则表达式模式（用于批量移除）
  */
 export function getAllPatterns() {
@@ -212,59 +189,31 @@ export function getAllPatterns() {
 
 /**
  * 生成库注入脚本（用于 iframe）
- * 注意：这个函数仍然使用静态配置，建议迁移到使用 useLibraryCache
+ * 支持从外部传入"当前启用的库"数组；未传入时回退到静态配置的启用状态
  */
-export function generateInjectionScript() {
-  // 生成一个自执行脚本：按优先级顺序为 iframe 加载库。
-  // 若父窗口提供了 __htmathLibBlobs[id] 的 Blob URL，则优先使用；否则回落到配置的 CDN URL。
-  const enabledLibs = visualizationLibs
-    .filter(lib => lib.enabled)
-    .sort((a, b) => a.priority - b.priority)
-    
-  const libsPayload = enabledLibs.map(lib => ({
-    id: lib.id,
-    name: lib.name,
-    url: lib.url,
-    stylesheets: lib.stylesheets || [],
-    integrity: lib.integrity || '',
-    crossOrigin: lib.crossOrigin || ''
-  }))
+export function generateInjectionScript(enabledLibsInput) {
+  // 统一使用"当前启用"的库，保持与 useLibraryCache 一致
+  const enabledLibs = (Array.isArray(enabledLibsInput) && enabledLibsInput.length
+    ? enabledLibsInput
+    : visualizationLibs.filter(lib => lib.enabled)
+  ).sort((a, b) => a.priority - b.priority)
 
-  const serialized = JSON.stringify(libsPayload)
-  return `
-    <script>
-    (function(){
-      var libs = ${serialized};
-      var blobs = (typeof parent !== 'undefined' && parent.__htmathLibBlobs) ? parent.__htmathLibBlobs : null;
-      function injectStyles(hrefs){
-        try {
-          (hrefs||[]).forEach(function(h){
-            var link = document.createElement('link');
-            link.rel = 'stylesheet';
-            link.href = h;
-            document.head.appendChild(link);
-          });
-        } catch(e) {}
+  // 采用阻塞解析的真实标签，确保在解析 body 前加载完成
+  const parts = []
+  for (const lib of enabledLibs) {
+    // 样式表（如 Leaflet）
+    if (lib.stylesheets && lib.stylesheets.length) {
+      for (const href of lib.stylesheets) {
+        parts.push(`<link rel="stylesheet" href="${href}">`)
       }
-      function loadSeq(i){
-        if (i >= libs.length) return;
-        var lib = libs[i];
-        injectStyles(lib.stylesheets);
-        var src = (blobs && blobs[lib.id]) ? blobs[lib.id] : lib.url;
-        var s = document.createElement('script');
-        s.src = src;
-        if (/^https?:/i.test(src)) {
-          if (lib.integrity) s.integrity = lib.integrity;
-          if (lib.crossOrigin) s.crossOrigin = lib.crossOrigin;
-        }
-        s.onload = function(){ loadSeq(i+1); };
-        s.onerror = function(){ console.warn('⚠️ 库加载失败:', lib.name, '->', src); loadSeq(i+1); };
-        document.head.appendChild(s);
-      }
-      loadSeq(0);
-    })();
-    <\/script>
-  `
+    }
+    // 脚本（按优先级顺序，非 async/非 defer）
+    const attrs = []
+    if (lib.integrity) attrs.push(`integrity="${lib.integrity}"`)
+    if (lib.crossOrigin) attrs.push(`crossorigin="${lib.crossOrigin}"`)
+    parts.push(`<script src="${lib.url}" ${attrs.join(' ')}></script>`)
+  }
+  return parts.join('\n')
 }
 
 /**
@@ -314,10 +263,8 @@ export default {
   visualizationLibs,
   cacheConfig,
   sandboxConfig,
-  getEnabledLibs,
   getLibById,
   getLibByGlobalName,
-  toggleLib,
   getAllPatterns,
   generateInjectionScript,
   addLibConfig,

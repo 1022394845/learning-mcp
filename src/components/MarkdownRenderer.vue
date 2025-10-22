@@ -3,12 +3,12 @@ import { ref, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import { 
-  getEnabledLibs, 
   getAllPatterns, 
   generateInjectionScript,
   cacheConfig,
   sandboxConfig
 } from '../config/visualization-libs.config.js'
+import { useLibraryCache } from '../composables/useLibraryCache.js'
 
 const props = defineProps({
   content: { type: String, required: true },
@@ -17,6 +17,8 @@ const props = defineProps({
   // 新增：支持流式输出模式
   streaming: { type: Boolean, default: false }
 })
+
+const { allLibs, initialize } = useLibraryCache()
 
 const renderedContent = ref('')
 // 仅在检测到 htmath 且处于流式阶段时展示加载指示
@@ -32,7 +34,10 @@ const activeIframeIds = new Set()
 // 记录已插入的 iframe 内容，避免在流式轻量渲染中重复注入
 const iframeContentCache = new Map()
 
-onMounted(() => {
+onMounted(async () => {
+  // 初始化库缓存
+  await initialize()
+
   DOMPurify.addHook('afterSanitizeAttributes', function(node) {
     if (node.tagName === 'IMG' && node.getAttribute('src')) {
       const src = node.getAttribute('src')
@@ -59,7 +64,7 @@ onMounted(() => {
   if (!window.__htmathLibsLoaded) {
     window.__htmathLibsLoaded = {}
     
-    const enabledLibs = getEnabledLibs()
+    const enabledLibs = allLibs.value.filter(lib => lib.enabled)
     if (cacheConfig.debug) {
       console.log(`📦 准备预加载 ${enabledLibs.length} 个可视化库`)
     }
@@ -278,7 +283,7 @@ function insertImageToDom(id, imageData, altText) {
 }
 
 // 使用 sandboxed iframe 渲染 <htmath> 内容（使用全局缓存）
-const INJECTION_VERSION = '2'; // 当注入策略或基础脚本发生重大变化时递增，以使旧缓存失效
+const INJECTION_VERSION = '3'; // 当注入策略或基础脚本发生重大变化时递增，以使旧缓存失效
 function insertHtmlToDom(id, htmlContent) {
   try {
     const container = document.getElementById(id)
@@ -319,7 +324,7 @@ function insertHtmlToDom(id, htmlContent) {
     
     // 使用配置文件中的所有正则模式进行匹配和移除
     const allPatterns = getAllPatterns()
-    const enabledLibs = getEnabledLibs()
+    const enabledLibs = allLibs.value.filter(lib => lib.enabled)
     
     enabledLibs.forEach(lib => {
       lib.patterns.forEach(pattern => {
@@ -423,8 +428,8 @@ function insertHtmlToDom(id, htmlContent) {
         setTimeout(rafSend, 200);
       })();<\/script>`
 
-    // 从配置文件生成库注入脚本
-    const libInjectionScript = generateInjectionScript()
+    // 从配置文件生成库注入脚本（使用"当前启用"的库），并以阻塞方式注入
+    const libInjectionScript = generateInjectionScript(enabledLibs)
 
     // 固定浅色基础样式
     const lightBaseStyle = `
