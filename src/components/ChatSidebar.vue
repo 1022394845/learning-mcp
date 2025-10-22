@@ -11,7 +11,7 @@
     </div>
 
     <!-- 会话列表 -->
-  <div class="conversations-list u-scrollbar">
+    <TransitionGroup tag="div" name="fade" class="conversations-list u-scrollbar">
       <div
         v-for="conversation in conversations"
         :key="conversation.id"
@@ -40,7 +40,7 @@
           </svg>
         </button>
       </div>
-    </div>
+    </TransitionGroup>
 
     <!-- MCP 工具入口 -->
     <div class="mcp-tools-section">
@@ -170,8 +170,10 @@ function formatTime(date) {
 .new-chat-btn:hover { border-color: var(--border-strong); }
 
 .conversations-list {
+  position: relative;
   flex: 1;
   overflow-y: auto;
+  overflow-x: hidden;
   padding: var(--space-3) var(--space-3) 0;
 }
 
@@ -290,4 +292,14 @@ function formatTime(date) {
 @media (min-width: 1025px) {
   html.sidebar-collapsed .chat-sidebar { width: 0; border-right-color: transparent; overflow: hidden; }
 }
+
+/* 动画效果 */
+.fade-move, /* 对移动中的元素应用的过渡 */
+.fade-enter-active,
+.fade-leave-active { transition: all 0.5s ease; }
+
+.fade-enter-from,
+.fade-leave-to { opacity: 0; transform: translateX(30px); }
+
+.fade-leave-active { position: absolute; }
 </style>
