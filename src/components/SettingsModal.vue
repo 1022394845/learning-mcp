@@ -126,13 +126,41 @@ onBeforeUnmount(() => {
 .setting-item label { display: block; font-size: 13px; font-weight: 700; color: var(--fg); margin-bottom: 8px; }
 .setting-item input { width: 100%; padding: 10px 12px; border-radius: var(--radius-sm); background: var(--bg-elev-2); border: 1px solid var(--border); color: var(--fg); }
 .setting-description { font-size: 12px; color: var(--fg-dim); margin: 0; }
-.config-btn { padding: 8px 16px; background: var(--primary); border: none; border-radius: var(--radius-sm); cursor: pointer; font-size: 13px; }
-.config-btn:hover { background: var(--primary-dark); }
+.config-btn { 
+  padding: 8px 16px; 
+  background: var(--bg); 
+  color: var(--accent);
+  border: 1px solid var(--border); 
+  border-radius: var(--radius-sm); 
+  cursor: pointer; 
+  font-size: 13px; 
+  font-weight: 500;
+  transition: all var(--dur-fast) var(--ease-out);
+}
+.config-btn:hover { 
+  background: var(--select); 
+  transform: translateY(-1px);
+}
 
 /* LibConfig 模态框样式 */
 .lib-config-modal { position: fixed; inset: 0; background: rgba(0,0,0,.5); display: flex; align-items: center; justify-content: center; z-index: 1001; backdrop-filter: blur(2px); }
-.lib-config-content { background: var(--bg-elev-1); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 20px; max-width: 1000px; width: 95%; max-height: 90vh; overflow-y: auto; box-shadow: var(--shadow); }
-.lib-config-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+.lib-config-content { 
+  background: var(--bg-elev-1); 
+  border: 1px solid var(--border); 
+  border-radius: var(--radius-lg); 
+  padding: 20px; 
+  max-width: 1000px; 
+  width: 95%; 
+  max-height: 90vh; 
+  overflow-y: auto; 
+  box-shadow: var(--shadow); 
+}
+.lib-config-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; border-bottom: 1px solid var(--border); padding-bottom: 16px; }
 .lib-config-header h3 { margin: 0; font-size: 18px; color: var(--fg); }
-.lib-config-body { color: var(--fg); }
+.lib-config-body { 
+  color: var(--fg); 
+  background: var(--bg-elev-1);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
 </style>

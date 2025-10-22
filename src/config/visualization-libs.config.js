@@ -2,7 +2,7 @@
  * 可视化库配置文件
  * 用于管理 iframe 中需要预加载和缓存的外部 JavaScript 库
  * 
- * 支持热更新：修改此文件后，刷新页面即可生效
+ * 注意：启用/禁用状态现在由 useLibraryCache composable 管理并持久化到 localStorage
  */
 
 export const visualizationLibs = [
@@ -15,7 +15,7 @@ export const visualizationLibs = [
     url: 'https://cdn.plot.ly/plotly-2.30.0.min.js',
     // 全局变量名（加载后在 window 对象上的属性名）
     globalName: 'Plotly',
-    // 是否启用预加载
+    // 默认启用状态（仅在首次使用时有效，之后由用户设置控制）
     enabled: true,
     // 正则表达式：用于检测和移除 HTML 中的外部引用
     // 支持多个匹配模式
@@ -25,15 +25,15 @@ export const visualizationLibs = [
     ],
     // 优先级（数字越小优先级越高，影响加载顺序）
     priority: 1,
-    // 可选：版本号（用于版本管理和缓存控制）
+    // 版本号（用于版本管理和缓存控制）
     version: '2.30.0',
-    // 可选：依赖的其他库（按 id 引用）
+    // 依赖的其他库（按 id 引用）
     dependencies: [],
-    // 可选：加载超时时间（毫秒）
+    // 加载超时时间（毫秒）
     timeout: 30000,
-    // 可选：完整性检查（SRI）
+    // 完整性检查（SRI）
     integrity: '',
-    // 可选：跨域策略
+    // 跨域策略
     crossOrigin: 'anonymous'
   },
   {
@@ -143,7 +143,7 @@ export const cacheConfig = {
   // 缓存过期时间（毫秒，0 表示永不过期）
   ttl: 0,
   // 是否在控制台输出调试信息
-  debug: true
+  debug: false
 }
 
 /**
@@ -167,12 +167,12 @@ export const sandboxConfig = {
 }
 
 /**
- * 获取所有启用的库
+ * 获取所有启用的库（已废弃，使用 useLibraryCache 代替）
+ * @deprecated 使用 useLibraryCache().allLibs.filter(lib => lib.enabled) 代替
  */
 export function getEnabledLibs() {
-  return visualizationLibs
-    .filter(lib => lib.enabled)
-    .sort((a, b) => a.priority - b.priority)
+  console.warn('getEnabledLibs() 已废弃，请使用 useLibraryCache() composable')
+  return visualizationLibs.filter(lib => lib.enabled)
 }
 
 /**
@@ -190,9 +190,11 @@ export function getLibByGlobalName(globalName) {
 }
 
 /**
- * 启用或禁用库
+ * 启用或禁用库（已废弃，使用 useLibraryCache 代替）
+ * @deprecated 使用 useLibraryCache().toggleLibrary() 代替
  */
 export function toggleLib(id, enabled) {
+  console.warn('toggleLib() 已废弃，请使用 useLibraryCache().toggleLibrary() 代替')
   const lib = getLibById(id)
   if (lib) {
     lib.enabled = enabled
@@ -205,33 +207,63 @@ export function toggleLib(id, enabled) {
  * 获取所有库的正则表达式模式（用于批量移除）
  */
 export function getAllPatterns() {
-  return visualizationLibs
-    .filter(lib => lib.enabled)
-    .flatMap(lib => lib.patterns)
+  return visualizationLibs.flatMap(lib => lib.patterns)
 }
 
 /**
  * 生成库注入脚本（用于 iframe）
+ * 注意：这个函数仍然使用静态配置，建议迁移到使用 useLibraryCache
  */
 export function generateInjectionScript() {
-  // 为每个启用的库生成同步 <script src> 与 <link rel="stylesheet"> 标签
-  // 目的：确保库在 iframe 自身上下文中、且在 body 内联脚本执行前已加载完成，避免跨 window 复用造成的时序与上下文错配。
-  const enabledLibs = getEnabledLibs()
+  // 生成一个自执行脚本：按优先级顺序为 iframe 加载库。
+  // 若父窗口提供了 __htmathLibBlobs[id] 的 Blob URL，则优先使用；否则回落到配置的 CDN URL。
+  const enabledLibs = visualizationLibs
+    .filter(lib => lib.enabled)
+    .sort((a, b) => a.priority - b.priority)
+    
+  const libsPayload = enabledLibs.map(lib => ({
+    id: lib.id,
+    name: lib.name,
+    url: lib.url,
+    stylesheets: lib.stylesheets || [],
+    integrity: lib.integrity || '',
+    crossOrigin: lib.crossOrigin || ''
+  }))
 
-  const styleTags = enabledLibs.flatMap(lib => (lib.stylesheets || [])).map(href => {
-    return `<link rel="stylesheet" href="${href}">`
-  }).join('\n')
-
-  const scriptTags = enabledLibs.map(lib => {
-    const sri = lib.integrity ? ` integrity="${lib.integrity}"` : ''
-    const co = lib.crossOrigin ? ` crossorigin="${lib.crossOrigin}"` : ''
-    return `<script src="${lib.url}"${sri}${co}></script>`
-  }).join('\n')
-
-  // 放在 <head> 中，保证按 priority 顺序同步加载
+  const serialized = JSON.stringify(libsPayload)
   return `
-${styleTags}
-${scriptTags}
+    <script>
+    (function(){
+      var libs = ${serialized};
+      var blobs = (typeof parent !== 'undefined' && parent.__htmathLibBlobs) ? parent.__htmathLibBlobs : null;
+      function injectStyles(hrefs){
+        try {
+          (hrefs||[]).forEach(function(h){
+            var link = document.createElement('link');
+            link.rel = 'stylesheet';
+            link.href = h;
+            document.head.appendChild(link);
+          });
+        } catch(e) {}
+      }
+      function loadSeq(i){
+        if (i >= libs.length) return;
+        var lib = libs[i];
+        injectStyles(lib.stylesheets);
+        var src = (blobs && blobs[lib.id]) ? blobs[lib.id] : lib.url;
+        var s = document.createElement('script');
+        s.src = src;
+        if (/^https?:/i.test(src)) {
+          if (lib.integrity) s.integrity = lib.integrity;
+          if (lib.crossOrigin) s.crossOrigin = lib.crossOrigin;
+        }
+        s.onload = function(){ loadSeq(i+1); };
+        s.onerror = function(){ console.warn('⚠️ 库加载失败:', lib.name, '->', src); loadSeq(i+1); };
+        document.head.appendChild(s);
+      }
+      loadSeq(0);
+    })();
+    <\/script>
   `
 }
 
