@@ -93,76 +93,78 @@
           </div>
         </div>
 
-        <div
-          v-for="message in messages"
-          :key="message.id"
-          class="message-wrapper"
-          :class="message.role"
-        >
-          <div class="message-avatar">
-            <div v-if="message.role === 'user'" class="avatar user-avatar">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
-                <circle cx="12" cy="7" r="4"/>
-              </svg>
-            </div>
-            <div v-else class="avatar assistant-avatar">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
-              </svg>
-            </div>
-          </div>
-          
-          <div class="message-content">
-            <div class="message-header">
-              <span class="message-role">{{ message.role === 'user' ? '你' : 'AI 助手' }}</span>
-              <span class="message-time">{{ formatMessageTime(message.timestamp) }}</span>
+        <TransitionGroup tag="div" :name="enableMessageTransition ? 'list' : ''" class="message-list">
+          <div
+            v-for="message in messages"
+            :key="message.id"
+            class="message-wrapper"
+            :class="message.role"
+          >
+            <div class="message-avatar">
+              <div v-if="message.role === 'user'" class="avatar user-avatar">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+                  <circle cx="12" cy="7" r="4"/>
+                </svg>
+              </div>
+              <div v-else class="avatar assistant-avatar">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+                </svg>
+              </div>
             </div>
             
-            <div class="message-body">
-              <!-- 仅渲染 AI 消息；用户消息以纯文本显示，避免解析/执行 -->
-              <template v-if="message.role === 'assistant'">
-                <MarkdownRenderer
-                  :content="message.content"
-                  :message-id="message.id"
-                  :generate-image="generateImage"
-                  :streaming="message.streaming"
-                />
+            <div class="message-content">
+              <div class="message-header">
+                <span class="message-role">{{ message.role === 'user' ? '你' : 'AI 助手' }}</span>
+                <span class="message-time">{{ formatMessageTime(message.timestamp) }}</span>
+              </div>
+              
+              <div class="message-body">
+                <!-- 仅渲染 AI 消息；用户消息以纯文本显示，避免解析/执行 -->
+                <template v-if="message.role === 'assistant'">
+                  <MarkdownRenderer
+                    :content="message.content"
+                    :message-id="message.id"
+                    :generate-image="generateImage"
+                    :streaming="message.streaming"
+                  />
 
-                <div v-if="message.streaming" class="streaming-indicator">
-                  <span class="dot"></span>
-                  <span class="dot"></span>
-                  <span class="dot"></span>
-                </div>
-              </template>
-              <template v-else>
-                <div class="user-message-text" v-text="message.content"></div>
-              </template>
-            </div>
+                  <div v-if="message.streaming" class="streaming-indicator">
+                    <span class="dot"></span>
+                    <span class="dot"></span>
+                    <span class="dot"></span>
+                  </div>
+                </template>
+                <template v-else>
+                  <div class="user-message-text" v-text="message.content"></div>
+                </template>
+              </div>
 
-            <!-- 消息操作按钮 -->
-            <div v-if="!message.streaming && message.role === 'assistant'" class="message-actions">
-              <button class="action-btn" @click="handleCopyMessage(message.content)" title="复制">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
-                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
-                </svg>
-              </button>
-              <button class="action-btn" @click="handleRegenerateResponse(message)" title="重新生成">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <polyline points="23 4 23 10 17 10"/>
-                  <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
-                </svg>
-              </button>
-              <button class="action-btn" @click="exportMessageAsHtml(message)" title="导出到网页">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <path d="M12 5v10"/>
-                  <path d="M19 12l-7 7-7-7"/>
-                </svg>
-              </button>
+              <!-- 消息操作按钮 -->
+              <div v-if="!message.streaming && message.role === 'assistant'" class="message-actions">
+                <button class="action-btn" @click="handleCopyMessage(message.content)" title="复制">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                  </svg>
+                </button>
+                <button class="action-btn" @click="handleRegenerateResponse(message)" title="重新生成">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="23 4 23 10 17 10"/>
+                    <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+                  </svg>
+                </button>
+                <button class="action-btn" @click="exportMessageAsHtml(message)" title="导出到网页">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M12 5v10"/>
+                    <path d="M19 12l-7 7-7-7"/>
+                  </svg>
+                </button>
+              </div>
             </div>
           </div>
-        </div>
+        </TransitionGroup>
       </div>
 
       <!-- 输入区域 -->
@@ -352,8 +354,13 @@ function handleNewConversation() {
   createConversation()
 }
 
+const enableMessageTransition = ref(true) // 启用消息过渡动效
 function handleSwitchConversation(id) {
+   enableMessageTransition.value = false
   switchConversation(id)
+  nextTick(()=>{
+    enableMessageTransition.value = true
+  })
 }
 
 async function handleDeleteConversation(id) {
@@ -653,7 +660,7 @@ function buildStandaloneHtml(title, bodyHtml) {
 .stop-btn { border-color: var(--border-strong); }
 
 /* 消息容器 */
-.messages-container { flex: 1; overflow-y: auto; padding: 16px; scroll-behavior: smooth; }
+.messages-container { flex: 1; overflow-y: auto; overflow-x: hidden; padding: 16px; scroll-behavior: smooth; }
 .empty-state { display: grid; place-items: center; min-height: 100%; color: var(--fg-muted); text-align: center; padding: 40px; }
 .empty-icon { margin-bottom: 20px; opacity: 0.6; }
 .empty-state h3 { font-size: 22px; margin-bottom: 10px; color: var(--fg); }
@@ -703,4 +710,17 @@ function buildStandaloneHtml(title, bodyHtml) {
   .sidebar-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.5); z-index: 40; }
 }
 
+/* 消息进入动画 */
+.list-enter-active,
+.list-leave-active {
+  transition: all 0.5s ease;
+}
+.list-enter-from,
+.list-leave-to {
+  opacity: 0;
+  transform: translateX(30px);
+}
+.list-leave-active {
+  position: absolute;
+}
 </style>
