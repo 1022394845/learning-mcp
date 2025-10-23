@@ -586,6 +586,7 @@ watch(() => props.streaming, (now, prev) => {
 
 <template>
   <div class="markdown-container">
+    <div v-html="renderedContent"></div>
     <!-- MCP 工具调用状态条 -->
     <div v-if="props.toolCalls && props.toolCalls.length" class="tool-call-banner">
       <span class="tool-call-title">正在调用工具：</span>
@@ -594,7 +595,6 @@ watch(() => props.streaming, (now, prev) => {
         <span class="tool-call-name">{{ name }}</span>
       </span>
     </div>
-    <div v-html="renderedContent"></div>
   </div>
 </template>
 
