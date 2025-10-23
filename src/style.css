@@ -27,6 +27,3 @@ p, li, input, textarea, button { font-size: 14px; }
 /* Selection color via theme */
 ::selection { background: var(--select-bg); color: var(--select-fg); }
 
-/* Scrollbar baseline */
-* { scrollbar-color: #2e2e2e transparent; scrollbar-width: thin; }
-
