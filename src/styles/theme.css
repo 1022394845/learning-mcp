@@ -143,15 +143,9 @@ html, body {
   border: 1px solid var(--border);
 }
 
-.u-scrollbar::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
+.u-scrollbar::-webkit-scrollbar { width: 5px; height: 8px; }
 .u-scrollbar::-webkit-scrollbar-track { background: transparent; }
-.u-scrollbar::-webkit-scrollbar-thumb {
-  background: #2e2e2e;
-  border-radius: 8px;
-}
+.u-scrollbar::-webkit-scrollbar-thumb { border-radius: 8px; }
 
 /* Focus styles */
 :focus-visible {
