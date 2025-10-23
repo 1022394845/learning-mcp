@@ -1,5 +1,4 @@
 import { ref, computed } from 'vue'
-import axios from 'axios'
 
 // 聊天会话管理
 export function useChat() {
@@ -62,6 +61,8 @@ export function useChat() {
       content,
       timestamp: new Date(),
       streaming: false,
+      // 新增：MCP 工具调用状态（仅助手消息使用）
+      toolCalls: [],
       ...metadata
     }
     messages.value.push(message)
@@ -98,6 +99,24 @@ export function useChat() {
     }
   }
 
+  // 新增：更新消息的工具调用列表（用于在 UI 中展示“正在调用工具 ...”）
+  function updateToolCalls(messageId, toolCalls) {
+    const message = messages.value.find(m => m.id === messageId)
+    if (message) {
+      message.toolCalls = Array.isArray(toolCalls) ? [...toolCalls] : []
+      message.timestamp = new Date()
+    }
+
+    // 同步更新当前会话中的对应消息
+    if (currentConversation.value) {
+      const convMessage = currentConversation.value.messages.find(m => m.id === messageId)
+      if (convMessage) {
+        convMessage.toolCalls = Array.isArray(toolCalls) ? [...toolCalls] : []
+        convMessage.timestamp = new Date()
+      }
+    }
+  }
+
   // 标记消息流式状态结束
   function finishStreaming(messageId) {
     const message = messages.value.find(m => m.id === messageId)
@@ -125,7 +144,7 @@ export function useChat() {
     isStreaming.value = true
     currentStreamingMessage.value = assistantMessage
 
-    let accumulatedText = ''
+  let accumulatedText = ''
 
     try {
       // 使用 fetch + ReadableStream 处理 SSE
@@ -160,12 +179,31 @@ export function useChat() {
             const dataStr = line.trim().substring(6)
             try {
               const data = JSON.parse(dataStr)
+              // 1) 普通文本增量
               if (data.text) {
                 accumulatedText += data.text
                 updateMessage(assistantMessage.id, accumulatedText)
                 
                 if (onChunk) {
                   onChunk(data.text, accumulatedText)
+                }
+              }
+              // 2) MCP 工具调用提示（仅展示状态与名称）
+              if (Array.isArray(data.tool_calls) && data.tool_calls.length > 0) {
+                const names = data.tool_calls
+                  .map(tc => (tc?.function?.name || tc?.custom?.name || tc?.type || '工具'))
+                  .filter(Boolean)
+                updateToolCalls(assistantMessage.id, names)
+              }
+              // 3) MCP 工具返回结果：将结果拼接到内容，并清除“调用中”提示
+              if (data.result) {
+                const raw = typeof data.result === 'string' ? data.result : JSON.stringify(data.result, null, 2)
+                const resultStr = decodeEscapedNewlines(raw)
+                accumulatedText += resultStr
+                updateMessage(assistantMessage.id, accumulatedText)
+                updateToolCalls(assistantMessage.id, [])
+                if (onChunk) {
+                  onChunk(resultStr, accumulatedText)
                 }
               }
             } catch (e) {
@@ -211,6 +249,8 @@ export function useChat() {
     }
     // 立即更新 UI，停止流式动画
     if (currentStreamingMessage.value) {
+      // 清除工具调用提示
+      try { updateToolCalls(currentStreamingMessage.value.id, []) } catch(_) {}
       finishStreaming(currentStreamingMessage.value.id)
     }
   }
@@ -279,11 +319,25 @@ export function useChat() {
     deleteConversation,
     addMessage,
     updateMessage,
+    updateToolCalls,
     sendMessage,
     stopStreaming,
     loadConversations,
     saveConversations,
     autoSave
+  }
+
+  // 将形如 "\n" 的转义序列还原为实际换行/制表符，避免在 Markdown 中显示为字面量
+  function decodeEscapedNewlines(str) {
+    if (typeof str !== 'string') return str
+    if (str.indexOf('\\') === -1) return str
+    // 优先处理常见组合与顺序，避免重复替换导致的错位
+    let s = str
+    s = s.replace(/\\r\\n/g, '\r\n')
+    s = s.replace(/\\n/g, '\n')
+    s = s.replace(/\\r/g, '\r')
+    s = s.replace(/\\t/g, '\t')
+    return s
   }
 }
 

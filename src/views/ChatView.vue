@@ -128,6 +128,7 @@
                     :message-id="message.id"
                     :generate-image="generateImage"
                     :streaming="message.streaming"
+                    :tool-calls="message.toolCalls || []"
                   />
 
                   <div v-if="message.streaming" class="streaming-indicator">

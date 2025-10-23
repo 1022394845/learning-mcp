@@ -44,7 +44,7 @@ const { toasts, remove } = useToastBus()
 
 <style scoped>
 .toast-container { position: fixed; top: 16px; left: 50%; transform: translateX(-50%); z-index: 1001; display: grid; gap: 18px; width: min(92vw, 360px); z-index: 10000;}
-.toast-item { display: grid; grid-template-columns: 20px 1fr; gap: 10px; align-items: center; padding: 12px 16px; background: linear-gradient(135deg, var(--bg-elev-1) 0%, var(--bg-elev-2) 100%); border: 1px solid var(--border); border-radius: var(--radius-lg); color: var(--fg); box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12), 0 2px 8px rgba(0, 0, 0, 0.08); backdrop-filter: blur(10px); }
+.toast-item { display: grid; grid-template-columns: 20px 1fr; margin-bottom: 10px; gap: 10px; align-items: center; padding: 12px 16px; background: linear-gradient(135deg, var(--bg-elev-1) 0%, var(--bg-elev-2) 100%); border: 1px solid var(--border); border-radius: var(--radius-lg); color: var(--fg); box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12), 0 2px 8px rgba(0, 0, 0, 0.08); backdrop-filter: blur(10px); }
 .toast-icon { display: flex; align-items: center; justify-content: center; opacity: .9; }
 .toast-content { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 8px; }
 .toast-message { margin: 0; font-size: 14px; line-height: 1.5; color: var(--fg); font-weight: 500; }

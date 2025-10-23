@@ -15,7 +15,9 @@ const props = defineProps({
   generateImage: { type: Function, required: true },
   messageId: { type: String, required: true },
   // 新增：支持流式输出模式
-  streaming: { type: Boolean, default: false }
+  streaming: { type: Boolean, default: false },
+  // 新增：MCP 工具调用状态展示
+  toolCalls: { type: Array, default: () => [] }
 })
 
 const { allLibs, initialize } = useLibraryCache()
@@ -35,6 +37,8 @@ const activeIframeIds = new Set()
 const iframeContentCache = new Map()
 
 onMounted(async () => {
+  // 让单换行也渲染为 <br>，解决包含 "\n" 的工具输出在 Markdown 中不换行的问题
+  try { marked.setOptions({ breaks: true, gfm: true }) } catch (_) {}
   // 初始化库缓存
   await initialize()
 
@@ -582,6 +586,14 @@ watch(() => props.streaming, (now, prev) => {
 
 <template>
   <div class="markdown-container">
+    <!-- MCP 工具调用状态条 -->
+    <div v-if="props.toolCalls && props.toolCalls.length" class="tool-call-banner">
+      <span class="tool-call-title">正在调用工具：</span>
+      <span v-for="name in props.toolCalls" :key="name" class="tool-call-chip">
+        <span class="tool-call-spinner" aria-hidden="true"></span>
+        <span class="tool-call-name">{{ name }}</span>
+      </span>
+    </div>
     <div v-html="renderedContent"></div>
   </div>
 </template>
@@ -769,6 +781,46 @@ watch(() => props.streaming, (now, prev) => {
   border-left: 4px solid #c62828;
   box-shadow: 0 4px 10px rgba(198, 40, 40, 0.1);
 }
+
+/* MCP 工具调用状态样式 */
+.tool-call-banner {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 10px;
+  padding: 10px 12px;
+  margin: 0 0 10px 0;
+  background: rgba(240, 240, 240, 0.7);
+  backdrop-filter: blur(5px);
+  -webkit-backdrop-filter: blur(5px);
+  border: 1px solid rgba(0,0,0,0.06);
+  border-radius: 10px;
+  color: #555;
+  font-size: 14px;
+}
+.tool-call-title {
+  font-weight: 600;
+  color: #444;
+}
+.tool-call-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  background: white;
+  border: 1px solid #e5e7eb;
+  border-radius: 999px;
+  color: #333;
+}
+.tool-call-spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid #cbd5e1;
+  border-top-color: #1a73e8;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+.tool-call-name { font-weight: 500; }
 
 .processing-indicator {
   display: inline-block;
