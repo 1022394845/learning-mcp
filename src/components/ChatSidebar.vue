@@ -271,8 +271,8 @@ function formatTime(date) {
 .settings-btn:hover { border-color: var(--border-strong); }
 
 /* 滚动条 */
-.conversations-list.u-scrollbar::-webkit-scrollbar { width: 8px; }
-.conversations-list.u-scrollbar::-webkit-scrollbar-thumb { background: #2e2e2e; border-radius: 8px; }
+.conversations-list.u-scrollbar::-webkit-scrollbar { background-color: transparent; }
+.conversations-list.u-scrollbar:hover::-webkit-scrollbar-thumb { background: #2e2e2e; border-radius: 8px; }
 
 /* 响应式：移动端隐藏侧边栏，由 ChatView 控制显示 */
 @media (max-width: 1024px) {

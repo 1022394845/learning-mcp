@@ -703,7 +703,7 @@ function buildStandaloneHtml(title, bodyHtml) {
 
 /* 滚动条 */
 .messages-container::-webkit-scrollbar { width: 8px; }
-.messages-container::-webkit-scrollbar-thumb { background: #2e2e2e; border-radius: 8px; }
+.messages-container:hover::-webkit-scrollbar-thumb { background: #2e2e2e; border-radius: 8px; }
 
 /* 响应式：移动端隐藏侧边栏，使用顶部菜单按钮唤起 */
 @media (max-width: 1024px) {
