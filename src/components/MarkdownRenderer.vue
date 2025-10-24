@@ -1,22 +1,16 @@
 <script setup>
 import { ref, onMounted, onUnmounted, watch, nextTick } from 'vue'
-import { marked } from 'marked'
-import DOMPurify from 'dompurify'
-import { 
-  getAllPatterns, 
-  generateInjectionScript,
-  cacheConfig,
-  sandboxConfig
-} from '../config/visualization-libs.config.js'
+import { cacheConfig } from '../config/visualization-libs.config.js'
 import { useLibraryCache } from '../composables/useLibraryCache.js'
+import { initMarked, ensureDomPurifyImageHook, parseMarkdown, processStreamingHtmath } from '../utils/htmlProcessor.js'
+import { ensureMathJaxLoaded, typesetMath } from '../utils/mathJaxRenderer.js'
+import { createHtmathIframeManager, globalIframeCache } from '../utils/iframeManager.js'
 
 const props = defineProps({
   content: { type: String, required: true },
   generateImage: { type: Function, required: true },
   messageId: { type: String, required: true },
-  // 新增：支持流式输出模式
   streaming: { type: Boolean, default: false },
-  // 新增：MCP 工具调用状态展示
   toolCalls: { type: Array, default: () => [] }
 })
 
@@ -28,41 +22,24 @@ const processingComplete = ref(false)
 const hasHtmathInContent = ref(false)
 const imageElements = ref([])
 const contentCopy = ref('')
-// 全局 iframe 缓存池（跨组件实例共享）
-const globalIframeCache = window.__htmathIframeCache || (window.__htmathIframeCache = new Map())
-const globalResizeListener = window.__htmathResizeListener || (window.__htmathResizeListener = { installed: false })
+// iframe 管理器实例
+const iframeMgr = ref(null)
 // 当前组件实例使用的 iframe ID 集合
 const activeIframeIds = new Set()
 // 记录已插入的 iframe 内容，避免在流式轻量渲染中重复注入
 const iframeContentCache = new Map()
 
+// 本组件级的可见性/进入视口后的“自愈”机制句柄
+let intersectionObserver = null
+let visibilityHandlerInstalled = false
+
 onMounted(async () => {
-  // 让单换行也渲染为 <br>，解决包含 "\n" 的工具输出在 Markdown 中不换行的问题
-  try { marked.setOptions({ breaks: true, gfm: true }) } catch (_) {}
-  // 初始化库缓存
+  // Markdown/DOMPurify 初始化与库缓存
+  initMarked()
+  ensureDomPurifyImageHook()
   await initialize()
-
-  DOMPurify.addHook('afterSanitizeAttributes', function(node) {
-    if (node.tagName === 'IMG' && node.getAttribute('src')) {
-      const src = node.getAttribute('src')
-      if (src.startsWith('data:image/')) return node
-    }
-  })
-
-  if (!window.MathJax) {
-    const script = document.createElement('script')
-    script.src = 'https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js'
-    script.async = true
-    window.MathJax = {
-      tex: {
-        inlineMath: [['$', '$'], ['\\(', '\\)']],
-        displayMath: [['$$', '$$'], ['\\[', '\\]']],
-        processEscapes: true
-      },
-      svg: { fontCache: 'global' }
-    }
-    document.head.appendChild(script)
-  }
+  // MathJax 按需加载
+  ensureMathJaxLoaded()
 
   // 预加载配置的可视化库到主文档（只加载一次，供所有 iframe 使用）
   if (!window.__htmathLibsLoaded) {
@@ -121,23 +98,45 @@ onMounted(async () => {
     })
   }
 
-  // 安装全局 resize 监听器（只安装一次）
-  if (!globalResizeListener.installed) {
-    window.addEventListener('message', (ev) => {
-      const data = ev.data
-      if (data && data.__htmath && data.id && typeof data.height === 'number') {
-        const cachedData = globalIframeCache.get(data.id)
-        if (cachedData && cachedData.iframe) {
-          const h = Math.max(120, data.height)
-          cachedData.iframe.style.height = h + 'px'
-          // 首次收到高度更新时，移除加载指示器
-          const parent = cachedData.iframe.parentElement
-          const indicator = parent && parent.querySelector ? parent.querySelector('.iframe-loading-indicator') : null
-          if (indicator) indicator.remove()
+  // iframe 管理器：提供 insertHtmlToDom / rehydrateIfBlank
+  const getEnabledLibs = () => allLibs.value.filter(lib => lib.enabled)
+  iframeMgr.value = createHtmathIframeManager(getEnabledLibs)
+
+  // 安装页面可见性与 pageshow 自愈钩子（用于恢复被浏览器丢弃为 about:blank 的 iframe）
+  if (!visibilityHandlerInstalled) {
+    const handler = () => {
+      // 仅处理当前组件内的 iframe
+      activeIframeIds.forEach((id) => {
+        try { iframeMgr.value.rehydrateIfBlank(id) } catch (_) {}
+      })
+    }
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') handler()
+    })
+    window.addEventListener('pageshow', handler)
+    visibilityHandlerInstalled = true
+  }
+
+  // 安装 IntersectionObserver，用于进入视口时自愈
+  if ('IntersectionObserver' in window && !intersectionObserver) {
+    intersectionObserver = new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        if (entry.isIntersecting) {
+          const el = entry.target
+          const id = el?.getAttribute?.('data-htmath-id')
+          if (id) {
+            try { iframeMgr.value.rehydrateIfBlank(id) } catch (_) {}
+          }
         }
       }
-    })
-    globalResizeListener.installed = true
+    }, { root: null, threshold: 0 })
+  }
+
+  // 初始化完成后，依据当前模式主动渲染一次，避免初始化与首帧渲染时序竞争导致的首屏异常
+  if (props.streaming) {
+    await renderLight()
+  } else {
+    await renderContent()
   }
 })
 
@@ -145,6 +144,11 @@ onMounted(async () => {
 // 但清理当前实例的引用
 onUnmounted(() => {
   activeIframeIds.clear()
+  // 解绑观察器
+  if (intersectionObserver) {
+    intersectionObserver.disconnect()
+    intersectionObserver = null
+  }
   
   // LRU 缓存清理策略（从配置文件读取）
   if (cacheConfig.enabled && globalIframeCache.size > cacheConfig.maxSize) {
@@ -167,15 +171,8 @@ onUnmounted(() => {
   }
 })
 
-function renderMathJax() {
-  if (window.MathJax) {
-    if (window.MathJax.typesetPromise) {
-      window.MathJax.typesetPromise().catch((err) => console.error('MathJax处理失败:', err))
-    } else if (window.MathJax.Hub) {
-      window.MathJax.Hub.Queue(['Typeset', window.MathJax.Hub])
-    }
-  }
-}
+// MathJax typeset 封装
+function renderMathJax() { typesetMath() }
 
 // 轻量渲染：仅在流式阶段执行，避免重型 DOM 与脚本注入
 async function renderLight() {
@@ -184,7 +181,7 @@ async function renderLight() {
   hasHtmathInContent.value = hasOpenOrClosed
   processingComplete.value = !hasOpenOrClosed
   // 针对流式内容，提前占位 <htmath>，在闭合标签出现后再异步注入 iframe
-  const { replacedText, tasks } = processStreamingHtmath(props.content)
+  const { replacedText, tasks } = processStreamingHtmath(props.content, props.messageId)
   renderedContent.value = await parseMarkdown(replacedText)
   // 闭合后立即（在本次 DOM 更新完成后）注入 iframe，确保与后续文本同步呈现
   if (tasks.length) {
@@ -193,7 +190,10 @@ async function renderLight() {
       const prev = iframeContentCache.get(id)
       if (prev !== html) {
         iframeContentCache.set(id, html)
-        insertHtmlToDom(id, html)
+        // 标记为当前组件使用的 iframe
+        activeIframeIds.add(id)
+        // 使用 iframe 管理器插入，传入视口观察回调
+        iframeMgr.value.insertHtmlToDom(id, html, { observeContainer: (el) => intersectionObserver && intersectionObserver.observe(el) })
       }
     })
   }
@@ -233,7 +233,11 @@ async function renderContent() {
     const placeholder = `<div id="${divId}" class="html-container"></div>`
     contentCopy.value = contentCopy.value.replace(fullMatch, placeholder)
     renderedContent.value = await parseMarkdown(contentCopy.value)
-    setTimeout(() => insertHtmlToDom(divId, htmlContent), 0)
+    setTimeout(() => {
+      // 标记为当前组件使用的 iframe
+      activeIframeIds.add(divId)
+      iframeMgr.value.insertHtmlToDom(divId, htmlContent, { observeContainer: (el) => intersectionObserver && intersectionObserver.observe(el) })
+    }, 0)
   }
 
   if (drawMatches.length === 0 && htmlMatches.length === 0) {
@@ -263,13 +267,6 @@ async function renderContent() {
   processingComplete.value = true
 }
 
-async function parseMarkdown(text) {
-  return DOMPurify.sanitize(marked.parse(text), {
-    ADD_TAGS: ['div', 'style', 'img'],
-    ADD_ATTR: ['id', 'class', 'style', 'src']
-  })
-}
-
 function insertImageToDom(id, imageData, altText) {
   const container = document.getElementById(id)
   if (container) {
@@ -286,267 +283,7 @@ function insertImageToDom(id, imageData, altText) {
   }
 }
 
-// 使用 sandboxed iframe 渲染 <htmath> 内容（使用全局缓存）
-const INJECTION_VERSION = '3'; // 当注入策略或基础脚本发生重大变化时递增，以使旧缓存失效
-function insertHtmlToDom(id, htmlContent) {
-  try {
-    const container = document.getElementById(id)
-    if (!container) return
-
-    // 标记为当前组件使用的 iframe
-    activeIframeIds.add(id)
-
-    // 检查全局缓存中是否已有相同内容的 iframe
-    const cachedData = globalIframeCache.get(id)
-    const cachedHtml = cachedData?.htmlContent
-
-  if (cachedData && cachedData.iframe && cachedHtml === htmlContent && cachedData.version === INJECTION_VERSION) {
-      // 缓存命中：重用现有 iframe
-      const existingIframe = cachedData.iframe
-      
-      // 如果 iframe 不在当前容器中，移动它
-      if (existingIframe.parentElement !== container) {
-        existingIframe.parentElement?.removeChild(existingIframe)
-        container.innerHTML = '' // 清空容器
-        container.appendChild(existingIframe)
-      }
-      
-      // 移除可能存在的加载指示器
-      const indicator = container.querySelector('.iframe-loading-indicator')
-      if (indicator) indicator.remove()
-      
-      return
-    }
-
-    // 缓存未命中：创建新的 iframe
-    // 先放置加载指示器
-    container.innerHTML = '<div class="iframe-loading-indicator"><div class="spinner"></div><span>正在加载可视化...</span></div>'
-
-    // 预处理 HTML：移除外部脚本引用，改为使用主文档预加载的库
-    let processedHtml = htmlContent
-    let removedLibs = []
-    
-    // 使用配置文件中的所有正则模式进行匹配和移除
-    const allPatterns = getAllPatterns()
-    const enabledLibs = allLibs.value.filter(lib => lib.enabled)
-    
-    enabledLibs.forEach(lib => {
-      lib.patterns.forEach(pattern => {
-        if (pattern.test(processedHtml)) {
-          processedHtml = processedHtml.replace(pattern, '')
-          if (!removedLibs.includes(lib.name)) {
-            removedLibs.push(lib.name)
-          }
-        }
-      })
-    })
-    
-    if (cacheConfig.debug && removedLibs.length > 0) {
-      console.log(`🔧 已移除外部库引用: ${removedLibs.join(', ')}`)
-    }
-
-    const resizeScript = `
-      <script>(function(){
-        var ROOT_ID = '__htmath_root';
-        var root = null;
-        var scheduled = false;
-        function ensureRoot(){
-          if (!root) {
-            root = document.getElementById(ROOT_ID) || document.body || document.documentElement;
-          }
-          return root;
-        }
-        function measure(){
-          try {
-            var el = ensureRoot();
-            var rect = el.getBoundingClientRect();
-            // 以包裹容器的可见高度为主，必要时兜底到文档滚动高度
-            var h = Math.ceil(rect.height);
-            if (!h || h < 1) {
-              h = Math.max(
-                document.documentElement ? document.documentElement.scrollHeight : 0,
-                document.body ? document.body.scrollHeight : 0,
-                document.documentElement ? document.documentElement.offsetHeight : 0,
-                document.body ? document.body.offsetHeight : 0
-              );
-            }
-            // 保底最小高度
-            h = Math.max(120, h);
-            parent.postMessage({__htmath:true, id: '${id}', height: h}, '*');
-          } catch(e) {}
-        }
-        function rafSend(){
-          if (scheduled) return; scheduled = true;
-          requestAnimationFrame(function(){ scheduled = false; measure(); });
-        }
-        // DOM 就绪与窗口尺寸变化
-        window.addEventListener('load', rafSend);
-        window.addEventListener('resize', rafSend);
-        // 监听根容器尺寸变化（更稳健，适配绝对定位/异步渲染）
-        try {
-          var el = ensureRoot();
-          if (window.ResizeObserver && el) {
-            var ro = new ResizeObserver(function(){ rafSend(); });
-            ro.observe(el);
-          }
-        } catch(_) {}
-        // 监听突变（兜底）
-        try {
-          var mo = new MutationObserver(function(){ rafSend(); });
-          mo.observe(document.documentElement || document.body, {subtree:true, childList:true, attributes:true, characterData:true});
-        } catch(_) {}
-        // 钩住 Plotly 的生命周期事件，确保绘制/重排后同步高度
-        function hookPlotly(){
-          try {
-            if (!window.Plotly) return;
-            var nodes = document.querySelectorAll('.js-plotly-plot');
-            nodes.forEach(function(n){
-              if (n.__ht_plotly_hooked) return;
-              n.__ht_plotly_hooked = true;
-              if (typeof n.on === 'function') {
-                n.on('plotly_afterplot', rafSend);
-                n.on('plotly_relayout', rafSend);
-                n.on('plotly_redraw', rafSend);
-                n.on('plotly_animated', rafSend);
-              }
-            });
-          } catch(_) {}
-        }
-        // 初次尝试与后续观察新增的 Plotly 容器
-        hookPlotly();
-        try {
-          var plotMo = new MutationObserver(function(muts){
-            for (var i=0;i<muts.length;i++){
-              var m = muts[i];
-              if ((m.addedNodes && m.addedNodes.length) || m.type === 'attributes') {
-                hookPlotly();
-                break;
-              }
-            }
-          });
-          plotMo.observe(document.documentElement || document.body, {subtree:true, childList:true, attributes:true});
-        } catch(_) {}
-        // 首次排版结束后再测一次，减少“先小后大”的抖动
-        setTimeout(rafSend, 0);
-        setTimeout(rafSend, 50);
-        setTimeout(rafSend, 200);
-      })();<\/script>`
-
-    // 从配置文件生成库注入脚本（使用"当前启用"的库），并以阻塞方式注入
-    const libInjectionScript = generateInjectionScript(enabledLibs)
-
-    // 固定浅色基础样式
-    const lightBaseStyle = `
-      <style>
-        :root { color-scheme: light; }
-        *, *::before, *::after { box-sizing: border-box; }
-        html, body { background: #ffffff; color: #111; width: 100%; }
-        body { margin: 0; }
-        a { color: #1a73e8; }
-        table { border-color: #e5e7eb; }
-        pre, code { background: #f8fafc; color: #0f172a; }
-        /* 让根容器自然撑开文档高度，避免绝对定位元素被排除在滚动高度之外 */
-        #__htmath_root { display: block; width: 100%; }
-      </style>`
-
-    let srcdocHtml = processedHtml
-    if (/<html[\s\S]*<\/html>/i.test(srcdocHtml)) {
-      if (/<\/body>/i.test(srcdocHtml)) {
-        // 在 head 中注入样式和库引用
-        srcdocHtml = srcdocHtml.replace(/<\/head>/i, `${lightBaseStyle}${libInjectionScript}</head>`)
-        // 用根容器包裹 body 内容，并在 body 末尾注入 resize 脚本
-        srcdocHtml = srcdocHtml
-          .replace(/<body([^>]*)>/i, '<body$1><div id="__htmath_root">')
-          .replace(/<\/body>/i, `</div>${resizeScript}</body>`)
-      } else {
-        // 罕见：存在 <html> 但没有 <body>，尽量包裹并注入脚本
-        srcdocHtml = lightBaseStyle + libInjectionScript + `<div id="__htmath_root">` + srcdocHtml + `</div>` + resizeScript
-      }
-    } else {
-      srcdocHtml = `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">${lightBaseStyle}${libInjectionScript}</head><body><div id="__htmath_root">${srcdocHtml}</div>${resizeScript}</body></html>`
-    }
-
-    const iframe = document.createElement('iframe')
-    // 使用配置文件中的 sandbox 属性
-    const sandboxValue = sandboxConfig.strict 
-      ? sandboxConfig.attributes.filter(attr => attr !== 'allow-same-origin').join(' ')
-      : sandboxConfig.attributes.join(' ')
-    iframe.setAttribute('sandbox', sandboxValue)
-    iframe.setAttribute('referrerpolicy', sandboxConfig.referrerPolicy)
-    iframe.style.width = '100%'
-    iframe.style.border = '0'
-    iframe.style.display = 'block'
-    iframe.style.overflow = 'hidden'
-    iframe.style.minHeight = '120px'
-    iframe.srcdoc = srcdocHtml
-
-    // iframe onload 时移除加载指示器
-    iframe.addEventListener('load', () => {
-      const indicator = container.querySelector('.iframe-loading-indicator')
-      if (indicator) indicator.remove()
-    })
-
-    // 更新全局缓存
-    globalIframeCache.set(id, {
-      iframe: iframe,
-      htmlContent: htmlContent,
-      timestamp: Date.now(),
-      version: INJECTION_VERSION
-    })
-    
-    // 同时更新本地内容缓存（用于流式渲染）
-    iframeContentCache.set(id, htmlContent)
-
-    // 如果有旧的 iframe，从缓存中移除
-    if (cachedData && cachedData.iframe && cachedData.iframe !== iframe) {
-      cachedData.iframe.parentElement?.removeChild(cachedData.iframe)
-    }
-
-    container.appendChild(iframe)
-  } catch (error) {
-    console.error('处理HTML标签时出错:', error, error.stack)
-  }
-}
-
-// 在流式阶段对 <htmath> 进行占位/就地完成的轻量处理
-function processStreamingHtmath(text) {
-  const openTag = '<htmath>'
-  const closeTag = '</htmath>'
-  let cursor = 0
-  let index = 0
-  const parts = []
-  const tasks = [] // [{id, html}]
-
-  while (true) {
-    const start = text.indexOf(openTag, cursor)
-    if (start === -1) {
-      parts.push(text.slice(cursor))
-      break
-    }
-    // 追加开标签前的普通文本
-    parts.push(text.slice(cursor, start))
-    index += 1
-        const id = `html-${props.messageId}-${index}`
-    const end = text.indexOf(closeTag, start + openTag.length)
-    if (end === -1) {
-      // 未闭合：放置“正在加载可视化...”占位，截断后续内容（后续内容视为 htmath 内部，避免闪烁）
-      parts.push(
-        `<div id="${id}" class="html-container"><div class="iframe-loading-indicator"><div class="spinner"></div><span>正在加载可视化...</span></div></div>`
-      )
-      // 将游标移至末尾并结束循环（其后文本将随流式继续到达）
-      cursor = text.length
-      break
-    } else {
-      // 已闭合：占位并安排 iframe 注入任务
-      const innerHtml = text.slice(start + openTag.length, end)
-      parts.push(`<div id="${id}" class="html-container"></div>`)
-      tasks.push({ id, html: innerHtml })
-      cursor = end + closeTag.length
-    }
-  }
-
-  return { replacedText: parts.join(''), tasks }
-}
+// 流式阶段 htmath 处理已抽离至 htmlProcessor.js 中
 
 // 流式模式下，使用防抖渲染；非流式模式立即渲染
 let renderTimer = null

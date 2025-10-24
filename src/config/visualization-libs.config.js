@@ -97,21 +97,6 @@ export const visualizationLibs = [
     timeout: 30000
   },
   {
-    id: 'mathjax',
-    name: 'MathJax',
-    url: 'https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js',
-    globalName: 'MathJax',
-    enabled: false, // 已在主文档单独加载
-    patterns: [
-      /<script[^>]*src\s*=\s*["']https?:\/\/[^"']*mathjax[^"']*\.js["'][^>]*>[\s\S]*?<\/script>/gi,
-      /<script[^>]*src\s*=\s*["']https?:\/\/cdn\.jsdelivr\.net\/npm\/mathjax[^"']*["'][^>]*>[\s\S]*?<\/script>/gi
-    ],
-    priority: 6,
-    version: '3.x',
-    dependencies: [],
-    timeout: 30000
-  },
-  {
     id: 'leaflet',
     name: 'Leaflet',
     url: 'https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js',
@@ -125,10 +110,21 @@ export const visualizationLibs = [
     version: '1.9.4',
     dependencies: [],
     timeout: 30000,
-    // Leaflet 还需要 CSS
-    stylesheets: [
-      'https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css'
-    ]
+  },
+  {
+    id: 'mermaid',
+    name: 'Mermaid',
+    url: 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js',
+    globalName: 'mermaid',
+    enabled: false, // 默认禁用
+    patterns: [
+      /<script[^>]*src\s*=\s*["']https?:\/\/[^"']*mermaid[^"']*\.js["'][^>]*>[\s\S]*?<\/script>/gi,
+      /<script[^>]*src\s*=\s*["']https?:\/\/cdn\.jsdelivr\.net\/npm\/mermaid[^"']*["'][^>]*>[\s\S]*?<\/script>/gi
+    ],
+    priority: 8,
+    version: '10.x',
+    dependencies: [],
+    timeout: 30000
   }
 ]
 
