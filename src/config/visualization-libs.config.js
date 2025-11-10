@@ -1,8 +1,6 @@
 /**
  * 可视化库配置文件
  * 用于管理 iframe 中需要预加载和缓存的外部 JavaScript 库
- * 
- * 注意：启用/禁用状态现在由 useLibraryCache composable 管理并持久化到 localStorage
  */
 
 export const visualizationLibs = [
@@ -109,7 +107,7 @@ export const visualizationLibs = [
     priority: 7,
     version: '1.9.4',
     dependencies: [],
-    timeout: 30000,
+    timeout: 30000
   },
   {
     id: 'mermaid',
@@ -127,20 +125,6 @@ export const visualizationLibs = [
     timeout: 30000
   }
 ]
-
-/**
- * iframe 缓存配置
- */
-export const cacheConfig = {
-  // 最大缓存数量（LRU 策略）
-  maxSize: 50,
-  // 是否启用缓存
-  enabled: true,
-  // 缓存过期时间（毫秒，0 表示永不过期）
-  ttl: 0,
-  // 是否在控制台输出调试信息
-  debug: false
-}
 
 /**
  * iframe 安全配置
@@ -166,21 +150,21 @@ export const sandboxConfig = {
  * 根据 ID 获取库配置
  */
 export function getLibById(id) {
-  return visualizationLibs.find(lib => lib.id === id)
+  return visualizationLibs.find((lib) => lib.id === id)
 }
 
 /**
  * 根据全局变量名获取库配置
  */
 export function getLibByGlobalName(globalName) {
-  return visualizationLibs.find(lib => lib.globalName === globalName)
+  return visualizationLibs.find((lib) => lib.globalName === globalName)
 }
 
 /**
  * 获取所有库的正则表达式模式（用于批量移除）
  */
 export function getAllPatterns() {
-  return visualizationLibs.flatMap(lib => lib.patterns)
+  return visualizationLibs.flatMap((lib) => lib.patterns)
 }
 
 /**
@@ -189,9 +173,10 @@ export function getAllPatterns() {
  */
 export function generateInjectionScript(enabledLibsInput) {
   // 统一使用"当前启用"的库，保持与 useLibraryCache 一致
-  const enabledLibs = (Array.isArray(enabledLibsInput) && enabledLibsInput.length
-    ? enabledLibsInput
-    : visualizationLibs.filter(lib => lib.enabled)
+  const enabledLibs = (
+    Array.isArray(enabledLibsInput) && enabledLibsInput.length
+      ? enabledLibsInput
+      : visualizationLibs.filter((lib) => lib.enabled)
   ).sort((a, b) => a.priority - b.priority)
 
   // 采用阻塞解析的真实标签，确保在解析 body 前加载完成
@@ -247,7 +232,7 @@ export function addLibConfig(config) {
  * 移除库配置
  */
 export function removeLibConfig(id) {
-  const index = visualizationLibs.findIndex(lib => lib.id === id)
+  const index = visualizationLibs.findIndex((lib) => lib.id === id)
   if (index !== -1) {
     visualizationLibs.splice(index, 1)
     return true
@@ -257,7 +242,6 @@ export function removeLibConfig(id) {
 
 export default {
   visualizationLibs,
-  cacheConfig,
   sandboxConfig,
   getLibById,
   getLibByGlobalName,

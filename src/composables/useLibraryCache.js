@@ -1,33 +1,24 @@
-import { ref, reactive, computed, nextTick } from 'vue'
-import { visualizationLibs } from '../config/visualization-libs.config.js'
-import { useToast } from './useToast.js'
+import { reactive, computed } from 'vue'
+import { visualizationLibs } from '@/config/visualization-libs.config'
+import { useToast } from '@/composables/useToast'
 
 const CACHE_NAME = 'htmath-lib-cache-v1'
 const STORAGE_KEY = 'htmath-lib-settings'
+const toast = useToast()
 
-// 全局状态
+// 库全局状态对象
 const state = reactive({
-  // 每个库的启用状态（持久化到 localStorage）
-  enabledLibs: new Set(),
-  // 每个库的缓存状态
-  cacheStates: {},
-  // 下载状态
-  downloading: new Set(),
-  // iframe 缓存数量
-  iframeCacheSize: 0,
-  // 是否已初始化
-  initialized: false
+  enabledLibs: new Set(), // 库启用状态
+  cacheStates: {}, // 库缓存状态
+  downloading: new Set(), // 库下载状态
+  initialized: false // 是否初始化
 })
 
-/**
- * 库缓存管理 composable
- */
-export function useLibraryCache() {
-  const toast = useToast()
-
-  // 计算属性
+// 库缓存管理
+export const useLibraryCache = () => {
+  // 全部库信息
   const allLibs = computed(() => {
-    return visualizationLibs.map(lib => ({
+    return visualizationLibs.map((lib) => ({
       ...lib,
       enabled: state.enabledLibs.has(lib.id),
       cached: state.cacheStates[lib.id]?.cached || false,
@@ -37,19 +28,27 @@ export function useLibraryCache() {
     }))
   })
 
+  const libBlobs = {} // 已缓存库blob地址
+
+  // 已启用数量
   const enabledCount = computed(() => state.enabledLibs.size)
-  
-  const cachedCount = computed(() => 
-    Object.values(state.cacheStates).filter(s => s?.cached).length
+
+  // 已缓存数量
+  const cachedCount = computed(
+    () => Object.values(state.cacheStates).filter((s) => s?.cached).length
   )
-  
-  const totalCacheSize = computed(() => 
-    Object.values(state.cacheStates).reduce((acc, s) => acc + (s?.cached ? (s.size || 0) : 0), 0)
+
+  // 总缓存数量
+  const totalCacheSize = computed(() =>
+    Object.values(state.cacheStates).reduce(
+      (acc, s) => acc + (s?.cached ? s.size || 0 : 0),
+      0
+    )
   )
 
   // 初始化：加载本地存储的设置和缓存状态
   async function initialize() {
-    if (state.initialized) return
+    if (state.initialized) return // 已初始化
 
     try {
       // 加载启用状态
@@ -60,16 +59,12 @@ export function useLibraryCache() {
       } else {
         // 首次使用，使用配置文件中的默认启用状态
         state.enabledLibs = new Set(
-          visualizationLibs.filter(lib => lib.enabled).map(lib => lib.id)
+          visualizationLibs.filter((lib) => lib.enabled).map((lib) => lib.id)
         )
       }
 
       // 检查缓存状态
       await updateCacheStates()
-      
-      // 检查 iframe 缓存
-      updateIframeCacheSize()
-
       state.initialized = true
     } catch (error) {
       console.error('初始化库管理器失败:', error)
@@ -92,57 +87,47 @@ export function useLibraryCache() {
 
   // 切换库的启用状态
   function toggleLibrary(libId, enabled) {
-    if (enabled) {
-      state.enabledLibs.add(libId)
-    } else {
-      state.enabledLibs.delete(libId)
-    }
+    if (enabled) state.enabledLibs.add(libId)
+    else state.enabledLibs.delete(libId)
     saveSettings()
-    
-    const lib = visualizationLibs.find(l => l.id === libId)
-    if (lib) {
-      toast.success(`${lib.name} 已${enabled ? '启用' : '禁用'}`)
-    }
+
+    const lib = visualizationLibs.find((l) => l.id === libId)
+    if (lib) toast.success(`${lib.name} 已${enabled ? '启用' : '禁用'}`)
   }
 
   // 更新所有库的缓存状态
   async function updateCacheStates() {
-    if (!window.__htmathLibBlobs) {
-      window.__htmathLibBlobs = {}
-    }
-
     const cache = await caches.open(CACHE_NAME)
-    
-    for (const lib of visualizationLibs) {
-      const cacheState = { 
-        cached: false, 
-        size: 0, 
-        blobUrl: null, 
-        error: '' 
-      }
-
-      try {
-        const response = await cache.match(lib.url)
-        if (response) {
-          const blob = await response.clone().blob()
-          const blobUrl = URL.createObjectURL(blob)
-          
-          cacheState.cached = true
-          cacheState.size = blob.size
-          cacheState.blobUrl = blobUrl
-          window.__htmathLibBlobs[lib.id] = blobUrl
+    // 并行处理所有库的缓存检查
+    await Promise.all(
+      visualizationLibs.map(async (lib) => {
+        const cacheState = {
+          cached: false,
+          size: 0,
+          blobUrl: null,
+          error: ''
         }
-      } catch (error) {
-        cacheState.error = '读取缓存失败: ' + error.message
-      }
+        try {
+          const response = await cache.match(lib.url)
+          if (response) {
+            const blob = await response.clone().blob()
+            cacheState.cached = true
+            cacheState.size = blob.size
+            cacheState.blobUrl = URL.createObjectURL(blob)
+            libBlobs[lib.id] = cacheState.blobUrl
+          }
+        } catch (error) {
+          cacheState.error = '读取缓存失败: ' + error.message
+        }
 
-      state.cacheStates[lib.id] = cacheState
-    }
+        state.cacheStates[lib.id] = cacheState
+      })
+    )
   }
 
   // 下载/更新单个库的缓存
   async function downloadLibrary(libId) {
-    const lib = visualizationLibs.find(l => l.id === libId)
+    const lib = visualizationLibs.find((l) => l.id === libId)
     if (!lib) {
       toast.error('库不存在')
       return false
@@ -154,26 +139,32 @@ export function useLibraryCache() {
     }
 
     state.downloading.add(libId)
-    
+
     try {
       toast.info(`开始下载 ${lib.name}...`)
-      
-      const response = await fetch(lib.url, { 
-        cache: 'no-store',
-        headers: {
-          'Accept': 'application/javascript, text/javascript, */*'
-        }
-      })
-      
+
+      const response = await Promise.race([
+        fetch(lib.url, {
+          cache: 'no-store',
+          headers: { Accept: 'application/javascript, text/javascript, */*' }
+        }),
+        new Promise((_, reject) =>
+          setTimeout(
+            () => reject(new Error(`下载超时（${lib.timeout}ms）`)),
+            lib.timeout
+          )
+        )
+      ])
+
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`)
       }
 
       const cache = await caches.open(CACHE_NAME)
       await cache.put(lib.url, response.clone())
-      
+
       const blob = await response.blob()
-      
+
       // 清理旧的 blob URL
       const oldState = state.cacheStates[libId]
       if (oldState?.blobUrl) {
@@ -183,25 +174,21 @@ export function useLibraryCache() {
           // 忽略清理错误
         }
       }
-      
+
       // 创建新的 blob URL
       const blobUrl = URL.createObjectURL(blob)
-      
       state.cacheStates[libId] = {
         cached: true,
         size: blob.size,
         blobUrl,
         error: ''
       }
-      
-      if (!window.__htmathLibBlobs) {
-        window.__htmathLibBlobs = {}
-      }
-      window.__htmathLibBlobs[libId] = blobUrl
+      libBlobs[libId] = blobUrl
 
-      toast.success(`${lib.name} 下载完成 (${(blob.size / 1024 / 1024).toFixed(2)} MB)`)
+      toast.success(
+        `${lib.name} 下载完成 (${(blob.size / 1024 / 1024).toFixed(2)} MB)`
+      )
       return true
-      
     } catch (error) {
       const errorMsg = error.message || '下载失败'
       state.cacheStates[libId] = {
@@ -217,28 +204,26 @@ export function useLibraryCache() {
 
   // 删除单个库的缓存
   async function deleteLibraryCache(libId) {
-    const lib = visualizationLibs.find(l => l.id === libId)
+    const lib = visualizationLibs.find((l) => l.id === libId)
     if (!lib) return false
 
     try {
       const cache = await caches.open(CACHE_NAME)
       await cache.delete(lib.url)
-      
+
       // 清理 blob URL
       const cacheState = state.cacheStates[libId]
       if (cacheState?.blobUrl) {
         try {
           URL.revokeObjectURL(cacheState.blobUrl)
         } catch (e) {
-          // 忽略清理错误
+          console.log(e.message || '清理失败')
         }
       }
-      
+
       // 从全局 blob 映射中删除
-      if (window.__htmathLibBlobs) {
-        delete window.__htmathLibBlobs[libId]
-      }
-      
+      delete libBlobs[libId]
+
       state.cacheStates[libId] = {
         cached: false,
         size: 0,
@@ -254,43 +239,25 @@ export function useLibraryCache() {
     }
   }
 
-  // 下载所有启用的库
-  async function downloadAllEnabledLibs() {
-    const enabledLibIds = Array.from(state.enabledLibs)
-    const promises = enabledLibIds.map(id => downloadLibrary(id))
-    
-    toast.info(`开始下载 ${enabledLibIds.length} 个库...`)
-    
-    const results = await Promise.allSettled(promises)
-    const success = results.filter(r => r.status === 'fulfilled' && r.value).length
-    const failed = results.length - success
-    
-    if (failed === 0) {
-      toast.success(`所有 ${success} 个库下载完成`)
-    } else {
-      toast.warning(`${success} 个库下载成功，${failed} 个失败`)
-    }
-  }
-
   // 清空所有库缓存
   async function clearAllLibraryCache() {
     try {
       const cache = await caches.open(CACHE_NAME)
-      
+
       // 删除所有库的缓存
       const promises = visualizationLibs.map(async (lib) => {
         await cache.delete(lib.url)
-        
+
         // 清理 blob URL
         const cacheState = state.cacheStates[lib.id]
         if (cacheState?.blobUrl) {
           try {
             URL.revokeObjectURL(cacheState.blobUrl)
           } catch (e) {
-            // 忽略清理错误
+            console.log('清理失败')
           }
         }
-        
+
         state.cacheStates[lib.id] = {
           cached: false,
           size: 0,
@@ -298,36 +265,84 @@ export function useLibraryCache() {
           error: ''
         }
       })
-      
+
       await Promise.all(promises)
-      
+
       // 清空全局 blob 映射
-      if (window.__htmathLibBlobs) {
-        window.__htmathLibBlobs = {}
-      }
-      
+      libBlobs.length = 0
+
       toast.success('所有库缓存已清空')
     } catch (error) {
       toast.error('清空库缓存失败: ' + error.message)
     }
   }
 
-  // 更新 iframe 缓存数量
-  function updateIframeCacheSize() {
-    if (window.__htmathIframeCache) {
-      state.iframeCacheSize = window.__htmathIframeCache.size
-    }
-  }
+  // 下载所有启用的库
+  async function downloadAllEnabledLibs() {
+    const enabledLibIds = Array.from(state.enabledLibs)
+    if (enabledLibIds.length === 0) return toast.info('没有启用的库需要下载')
 
-  // 清空 iframe 缓存
-  function clearIframeCache() {
-    if (window.__htmathIframeCache) {
-      const size = window.__htmathIframeCache.size
-      window.__htmathIframeCache.clear()
-      state.iframeCacheSize = 0
-      toast.success(`已清空 ${size} 个 iframe 缓存`)
-    } else {
-      toast.info('iframe 缓存为空')
+    // 过滤已缓存的库，避免重复下载
+    const unCachedLibIds = enabledLibIds.filter((id) => {
+      const cacheState = state.cacheStates[id]
+      return !cacheState?.cached && !cacheState?.isDownloading
+    })
+
+    if (unCachedLibIds.length === 0)
+      return toast.success('所有启用的库已缓存完成')
+
+    // 显示总进度提示
+    const total = unCachedLibIds.length
+    const progressToast = toast.loading(`正在下载（0/${total}）...`, {
+      duration: 0, // 不自动关闭
+      forbidClick: true // 禁止点击关闭
+    })
+
+    try {
+      // 限制并发下载（避免请求拥堵）
+      const concurrencyLimit = 3
+      let completed = 0
+      const results = []
+
+      // 分批处理下载任务
+      for (let i = 0; i < unCachedLibIds.length; i += concurrencyLimit) {
+        const batch = unCachedLibIds.slice(i, i + concurrencyLimit)
+        const batchPromises = batch.map((id) =>
+          downloadLibrary(id).then((result) => ({ id, result }))
+        )
+
+        // 等待当前批次完成后再处理下一批
+        const batchResults = await Promise.allSettled(batchPromises)
+        results.push(...batchResults)
+
+        // 更新已完成数量和进度提示
+        completed += batch.length
+        progressToast.message = `正在下载（${completed}/${total}）...`
+      }
+
+      // 统计结果
+      const success = results.filter(
+        (r) => r.status === 'fulfilled' && r.value.result
+      ).length
+      const failed = total - success
+      const failedIds = results
+        .filter((r) => r.status !== 'fulfilled' || !r.value.result)
+        .map((r) => r.value?.id || '未知库')
+
+      // 关闭进度提示，显示最终结果
+      progressToast.close()
+      if (failed === 0) {
+        toast.success(`所有 ${success} 个库下载完成`)
+      } else {
+        toast.warning(
+          `${success} 个库下载成功，${failed} 个失败\n` +
+            `失败库ID: ${failedIds.join(', ')}`,
+          { duration: 6000 } // 延长显示时间
+        )
+      }
+    } catch (error) {
+      progressToast.close()
+      toast.error(`下载任务异常终止: ${error.message}`)
     }
   }
 
@@ -340,16 +355,18 @@ export function useLibraryCache() {
         exportTime: new Date().toISOString(),
         version: '1.0'
       }
-      
+
       const json = JSON.stringify(config, null, 2)
       const blob = new Blob([json], { type: 'application/json' })
       const url = URL.createObjectURL(blob)
-      
+
       const a = document.createElement('a')
       a.href = url
-      a.download = `library-config-${new Date().toISOString().slice(0, 10)}.json`
+      a.download = `library-config-${new Date()
+        .toISOString()
+        .slice(0, 10)}.json`
       a.click()
-      
+
       URL.revokeObjectURL(url)
       toast.success('配置已导出')
     } catch (error) {
@@ -357,38 +374,23 @@ export function useLibraryCache() {
     }
   }
 
-  // 定期更新状态
-  function startPeriodicUpdate() {
-    const update = () => {
-      updateIframeCacheSize()
-    }
-    
-    // 每隔 3 秒更新一次
-    const interval = setInterval(update, 3000)
-    
-    // 返回清理函数
-    return () => clearInterval(interval)
-  }
-
   return {
     // 状态
     allLibs,
+    libBlobs,
     enabledCount,
     cachedCount,
     totalCacheSize,
-    iframeCacheSize: computed(() => state.iframeCacheSize),
     initialized: computed(() => state.initialized),
-    
+
     // 方法
     initialize,
     toggleLibrary,
     downloadLibrary,
     deleteLibraryCache,
-    downloadAllEnabledLibs,
     clearAllLibraryCache,
-    clearIframeCache,
+    downloadAllEnabledLibs,
     exportConfig,
-    updateCacheStates,
-    startPeriodicUpdate
+    updateCacheStates
   }
 }
