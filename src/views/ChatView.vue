@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted, nextTick, watch } from 'vue'
+import { ref, onMounted, nextTick, watch } from 'vue'
 import ChatSidebar from '../components/ChatSidebar.vue'
 import ToolBar from '../components/ToolBar.vue'
 import MarkdownRenderer from '../components/MarkdownRenderer/MarkdownRenderer.vue'
@@ -9,6 +9,7 @@ import { useToast } from '../composables/useToast'
 import { useConfirm } from '../composables/useConfirm'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
+import { useLibraryCache } from '../composables/useLibraryCache'
 
 // 聊天数据
 const {
@@ -39,15 +40,6 @@ const sidebarOpen = ref(false)
 const theme = ref(localStorage.getItem('theme') || '') // ''=跟随系统, 或 'light'/'dark'
 const toast = useToast()
 const confirmDialog = useConfirm()
-
-// 初始化
-onMounted(() => {
-  loadConversations()
-  if (!currentConversationId.value) {
-    createConversation()
-  }
-  applyTheme(theme.value)
-})
 
 // 自动保存
 watch(
@@ -382,115 +374,54 @@ function sanitizeFilename(name) {
   return base || '导出'
 }
 
-function escapeHtmlAttr(str) {
-  return String(str)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-}
+// 初始化库缓存管理器
+const libraryCache = useLibraryCache()
+// 网络空闲时预加载启用的库
+function preloadEnabledLibrariesWhenIdle() {
+  // 检查是否已初始化且有启用的库
+  if (libraryCache.initialized.value && libraryCache.enabledCount.value > 0) {
+    // 使用requestIdleCallback在浏览器空闲时执行
+    if ('requestIdleCallback' in window) {
+      requestIdleCallback(
+        async () => {
+          // 只下载未缓存的库
+          const unCachedLibs = libraryCache.allLibs.value.filter(
+            (lib) => lib.enabled && !lib.cached
+          )
 
-function buildHtmathIframe(id, innerHtml) {
-  const resizeScript = `
-      <script>(function(){
-        function send(){
-          try {
-            var h = Math.max(
-              document.documentElement ? document.documentElement.scrollHeight : 0,
-              document.body ? document.body.scrollHeight : 0,
-              document.documentElement ? document.documentElement.offsetHeight : 0,
-              document.body ? document.body.offsetHeight : 0
-            );
-            parent.postMessage({__htmath:true, id: '${id}', height: h}, '*');
-          } catch(e) {}
-        }
-        window.addEventListener('load', send);
-        window.addEventListener('resize', send);
-        var mo = new MutationObserver(function(){ send(); });
-        mo.observe(document.documentElement || document.body, {subtree:true, childList:true, attributes:true, characterData:true});
-        setTimeout(send, 0);
-      })();<\/script>`
-
-  const lightBaseStyle = `
-      <style>
-        :root { color-scheme: light; }
-        html, body { background: #ffffff; color: #111; margin:0; padding:12px; }
-        a { color: #1a73e8; }
-        table { border-color: #e5e7eb; }
-        pre, code { background: #f8fafc; color: #0f172a; }
-      </style>`
-
-  let srcdocHtml = innerHtml
-  if (/<html[\s\S]*<\/html>/i.test(srcdocHtml)) {
-    if (/<\/head>/i.test(srcdocHtml)) {
-      srcdocHtml = srcdocHtml.replace(/<\/head>/i, `${lightBaseStyle}</head>`)
+          if (unCachedLibs.length > 0) {
+            console.log(`开始预加载 ${unCachedLibs.length} 个可视化库`)
+            await Promise.all(
+              unCachedLibs.map((lib) => libraryCache.downloadLibrary(lib.id))
+            )
+            console.log('可视化库预加载完成')
+          }
+        },
+        { timeout: 30000 } // 30秒超时，确保即使浏览器一直不空闲也能执行
+      )
     } else {
-      srcdocHtml = lightBaseStyle + srcdocHtml
+      // 降级方案：如果浏览器不支持requestIdleCallback，延迟一段时间后加载
+      setTimeout(() => {
+        libraryCache.downloadAllEnabledLibs()
+      }, 5000)
     }
-    if (/<\/body>/i.test(srcdocHtml)) {
-      srcdocHtml = srcdocHtml.replace(/<\/body>/i, `${resizeScript}</body>`)
-    } else {
-      srcdocHtml = srcdocHtml + resizeScript
-    }
-  } else {
-    srcdocHtml = `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">${lightBaseStyle}${resizeScript}</head><body>${srcdocHtml}</body></html>`
   }
-
-  const srcdocEscaped = escapeHtmlAttr(srcdocHtml)
-  return `<iframe id="${id}" sandbox="allow-scripts allow-forms allow-pointer-lock allow-modals allow-popups" referrerpolicy="no-referrer" style="width:100%;border:0;display:block;overflow:hidden;min-height:120px" srcdoc="${srcdocEscaped}"></iframe>`
 }
 
-function buildStandaloneHtml(title, bodyHtml) {
-  const parentResize = `
-    <script>
-      window.addEventListener('message', function(ev){
-        var d = ev.data;
-        if(d && d.__htmath && d.id && typeof d.height === 'number'){
-          var ifr = document.getElementById(d.id);
-          if(ifr){ ifr.style.height = Math.max(120, d.height) + 'px'; }
-        }
-      });
-    <\/script>`
+// 在组件挂载后初始化并设置预加载
+onMounted(() => {
+  loadConversations()
+  if (!currentConversationId.value) {
+    createConversation()
+  }
+  applyTheme(theme.value)
 
-  const baseStyles = `
-    <style>
-      body { font-family: -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; background:#fafafa; color:#111; margin:0; padding:24px; }
-      .markdown-container { line-height:1.6; max-width: 960px; margin: 0 auto; }
-      .markdown-container pre { background:#f6f8fa; border:1px solid rgba(0,0,0,0.08); border-radius:10px; padding:16px; overflow:auto; }
-      .markdown-container code { background: rgba(175,184,193,0.25); border-radius:6px; padding:0.2em 0.4em; }
-      .markdown-container img { max-width:100%; border-radius:8px; }
-      .html-container { margin:20px 0; padding:0; border:0; }
-      h1,h2,h3,h4,h5,h6 { color:#111; }
-      a { color:#1a73e8; }
-    </style>`
-
-  // 可选：MathJax（与在线渲染一致）
-  const mathjax = `
-    <script>
-      window.MathJax = {
-        tex: { inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['$$','$$'], ['\\[','\\]']], processEscapes: true },
-        svg: { fontCache: 'global' }
-      };
-    <\/script>
-    <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js" async><\/script>`
-
-  return `<!DOCTYPE html>
-  <html lang="zh-CN">
-    <head>
-      <meta charset="UTF-8" />
-      <meta name="viewport" content="width=device-width, initial-scale=1" />
-      <title>${escapeHtmlAttr(title)}</title>
-      ${baseStyles}
-    </head>
-    <body>
-      <div class="markdown-container">
-        ${bodyHtml}
-      </div>
-      ${parentResize}
-      ${mathjax}
-    </body>
-  </html>`
-}
+  // 初始化库缓存并设置预加载
+  libraryCache.initialize().then(() => {
+    // 初始化完成后，设置网络空闲时预加载
+    preloadEnabledLibrariesWhenIdle()
+  })
+})
 </script>
 
 <template>
