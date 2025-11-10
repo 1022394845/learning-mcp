@@ -65,7 +65,7 @@ function handleRender(iframe) {
         }
         stableCount++
 
-        if (stableCount >= 3) {
+        if (stableCount >= 10) {
           clearInterval(heightCheckTimer)
           heightCheckTimer = null
         }

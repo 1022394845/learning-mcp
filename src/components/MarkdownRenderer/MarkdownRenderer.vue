@@ -1,5 +1,5 @@
 <script setup>
-import { h } from 'vue'
+import { computed, h } from 'vue'
 import { XMarkdown } from 'vue-element-plus-x'
 import 'katex/dist/katex.min.css' // 数学公式样式
 // 导入自定义代码块映射的组件
@@ -14,6 +14,12 @@ const props = defineProps({
   toolCalls: { type: Array, default: () => [] }
 })
 const emits = defineEmits(['updateHeight'])
+
+const processedContent = computed(() => {
+  return props.content
+    .replace(/<htmath>/g, '```htmath\n')
+    .replace(/<\/htmath>/g, '\n```')
+})
 
 // 渲染自定义代码块
 const selfCodeXRender = {
@@ -51,7 +57,7 @@ const selfCodeXRender = {
 <template>
   <div class="markdown-container">
     <XMarkdown
-      :markdown="content"
+      :markdown="processedContent"
       :code-x-render="selfCodeXRender"
       :allow-html="true"
     />

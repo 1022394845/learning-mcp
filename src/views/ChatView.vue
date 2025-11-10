@@ -1,15 +1,14 @@
 <script setup>
 import { ref, onMounted, nextTick, watch } from 'vue'
-import ChatSidebar from '../components/ChatSidebar.vue'
-import ToolBar from '../components/ToolBar.vue'
-import MarkdownRenderer from '../components/MarkdownRenderer/MarkdownRenderer.vue'
-import SettingsModal from '../components/SettingsModal.vue'
-import { useChat } from '../composables/useChat'
-import { useToast } from '../composables/useToast'
-import { useConfirm } from '../composables/useConfirm'
-import { marked } from 'marked'
-import DOMPurify from 'dompurify'
-import { useLibraryCache } from '../composables/useLibraryCache'
+import ChatSidebar from '@/components/ChatSidebar.vue'
+import ToolBar from '@/components/ToolBar.vue'
+import MarkdownRenderer from '@/components/MarkdownRenderer/MarkdownRenderer.vue'
+import SettingsModal from '@/components/SettingsModal.vue'
+import { useChat } from '@/composables/useChat'
+import { useToast } from '@/composables/useToast'
+import { useConfirm } from '@/composables/useConfirm'
+import { useLibraryCache } from '@/composables/useLibraryCache'
+import { markdownToHtml } from '@/utils/markdownToHtml'
 
 // 聊天数据
 const {
@@ -172,7 +171,7 @@ function handleToolClick(tool) {
 
 function updateToolTip(tool) {
   const tips = {
-    code: '提示: 使用 <draw>描述</draw> 生成图像，使用 <htmath>HTML</htmath> 插入可视化',
+    code: '提示: 使用 <draw>描述</draw> 生成图像，使用 htmath 代码块插入可视化',
     file: '已选择文件上传功能，文件将随消息一起发送',
     visualization: '提示: 描述你想要的图表类型和数据，AI 将生成可视化代码',
     image: '提示: 使用 <draw>描述</draw> 标签包裹图像描述',
@@ -267,111 +266,6 @@ function toggleTheme() {
   } else {
     localStorage.removeItem('theme')
   }
-}
-
-// 导出 AI 回复为单页 HTML（包含 <htmath> 可视化）
-function exportMessageAsHtml(message) {
-  try {
-    const title = (currentConversation.value?.title || '导出').trim()
-    const filename = sanitizeFilename(title) + '.html'
-    const content = message?.content || ''
-
-    // 提取 <htmath> 块，使用占位符元素替换（避免被 DOMPurify 去除注释）
-    const blocks = []
-    let replaced = content
-    const htmathRegex = /<htmath>([\s\S]*?)<\/htmath>/gi
-    let index = 0
-    replaced = replaced.replace(htmathRegex, (_full, inner) => {
-      index += 1
-      const id = `html-${message.id}-${index}`
-      blocks.push({ id, html: inner })
-      return `<div data-htmath-placeholder="${id}"></div>`
-    })
-
-    // 渲染 Markdown（不包含 iframe），然后进行安全过滤
-    const rawHtml = marked.parse(replaced)
-    const safeHtml = DOMPurify.sanitize(rawHtml, {
-      ADD_TAGS: [
-        'div',
-        'style',
-        'img',
-        'table',
-        'thead',
-        'tbody',
-        'tr',
-        'th',
-        'td',
-        'pre',
-        'code',
-        'blockquote',
-        'hr',
-        'span',
-        'strong',
-        'em',
-        'ul',
-        'ol',
-        'li',
-        'h1',
-        'h2',
-        'h3',
-        'h4',
-        'h5',
-        'h6',
-        'p',
-        'a'
-      ],
-      ADD_ATTR: [
-        'id',
-        'class',
-        'style',
-        'src',
-        'alt',
-        'title',
-        'href',
-        'target',
-        'rel',
-        'data-htmath-placeholder'
-      ],
-      ALLOW_DATA_ATTR: true
-    })
-
-    // 插回 iframe（使用 srcdoc 内联，可自适应高度）
-    let bodyHtml = safeHtml
-    for (const { id, html } of blocks) {
-      const iframe = buildHtmathIframe(id, html)
-      const phRe = new RegExp(
-        `<div[^>]*data-htmath-placeholder=["']${id}["'][^>]*><\\/div>`,
-        'i'
-      )
-      bodyHtml = bodyHtml.replace(
-        phRe,
-        `<div class="html-container">${iframe}</div>`
-      )
-    }
-
-    const pageHtml = buildStandaloneHtml(title, bodyHtml)
-    const blob = new Blob([pageHtml], { type: 'text/html;charset=utf-8' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = filename
-    document.body.appendChild(a)
-    a.click()
-    a.remove()
-    URL.revokeObjectURL(url)
-    toast?.success && toast.success('已导出网页')
-  } catch (e) {
-    console.error('导出失败', e)
-    toast?.error && toast.error('导出失败')
-  }
-}
-
-function sanitizeFilename(name) {
-  const base = (name || '导出')
-    .replace(/[\\/:*?"<>|\r\n]+/g, ' ')
-    .trim()
-    .slice(0, 60)
-  return base || '导出'
 }
 
 // 初始化库缓存管理器
@@ -693,7 +587,12 @@ onMounted(() => {
                 </button>
                 <button
                   class="action-btn"
-                  @click="handleRegenerateResponse(message)"
+                  @click="
+                    handleRegenerateResponse(
+                      message,
+                      currentConversation?.title
+                    )
+                  "
                   title="重新生成"
                 >
                   <svg
@@ -710,7 +609,7 @@ onMounted(() => {
                 </button>
                 <button
                   class="action-btn"
-                  @click="exportMessageAsHtml(message)"
+                  @click="markdownToHtml(message)"
                   title="导出到网页"
                 >
                   <svg

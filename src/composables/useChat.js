@@ -11,7 +11,7 @@ export function useChat() {
 
   // 当前会话
   const currentConversation = computed(() => {
-    return conversations.value.find(c => c.id === currentConversationId.value)
+    return conversations.value.find((c) => c.id === currentConversationId.value)
   })
 
   // 创建新会话
@@ -31,7 +31,7 @@ export function useChat() {
 
   // 切换会话
   function switchConversation(conversationId) {
-    const conv = conversations.value.find(c => c.id === conversationId)
+    const conv = conversations.value.find((c) => c.id === conversationId)
     if (conv) {
       currentConversationId.value = conversationId
       messages.value = [...conv.messages]
@@ -40,7 +40,7 @@ export function useChat() {
 
   // 删除会话
   function deleteConversation(conversationId) {
-    const index = conversations.value.findIndex(c => c.id === conversationId)
+    const index = conversations.value.findIndex((c) => c.id === conversationId)
     if (index > -1) {
       conversations.value.splice(index, 1)
       if (currentConversationId.value === conversationId) {
@@ -66,31 +66,34 @@ export function useChat() {
       ...metadata
     }
     messages.value.push(message)
-    
+
     // 更新当前会话
     if (currentConversation.value) {
       currentConversation.value.messages = [...messages.value]
       currentConversation.value.updatedAt = new Date()
-      
+
       // 自动更新会话标题（使用第一条用户消息）
       if (currentConversation.value.messages.length === 1 && role === 'user') {
-        currentConversation.value.title = content.slice(0, 30) + (content.length > 30 ? '...' : '')
+        currentConversation.value.title =
+          content.slice(0, 30) + (content.length > 30 ? '...' : '')
       }
     }
-    
+
     return message
   }
 
   // 更新消息内容（用于流式输出）
   function updateMessage(messageId, content) {
-    const message = messages.value.find(m => m.id === messageId)
+    const message = messages.value.find((m) => m.id === messageId)
     if (message) {
       message.content = content
       message.timestamp = new Date()
-      
+
       // 同步更新会话记录
       if (currentConversation.value) {
-        const convMessage = currentConversation.value.messages.find(m => m.id === messageId)
+        const convMessage = currentConversation.value.messages.find(
+          (m) => m.id === messageId
+        )
         if (convMessage) {
           convMessage.content = content
           convMessage.timestamp = new Date()
@@ -101,7 +104,7 @@ export function useChat() {
 
   // 新增：更新消息的工具调用列表（用于在 UI 中展示“正在调用工具 ...”）
   function updateToolCalls(messageId, toolCalls) {
-    const message = messages.value.find(m => m.id === messageId)
+    const message = messages.value.find((m) => m.id === messageId)
     if (message) {
       message.toolCalls = Array.isArray(toolCalls) ? [...toolCalls] : []
       message.timestamp = new Date()
@@ -109,7 +112,9 @@ export function useChat() {
 
     // 同步更新当前会话中的对应消息
     if (currentConversation.value) {
-      const convMessage = currentConversation.value.messages.find(m => m.id === messageId)
+      const convMessage = currentConversation.value.messages.find(
+        (m) => m.id === messageId
+      )
       if (convMessage) {
         convMessage.toolCalls = Array.isArray(toolCalls) ? [...toolCalls] : []
         convMessage.timestamp = new Date()
@@ -119,7 +124,7 @@ export function useChat() {
 
   // 标记消息流式状态结束
   function finishStreaming(messageId) {
-    const message = messages.value.find(m => m.id === messageId)
+    const message = messages.value.find((m) => m.id === messageId)
     if (message) {
       message.streaming = false
     }
@@ -144,36 +149,39 @@ export function useChat() {
     isStreaming.value = true
     currentStreamingMessage.value = assistantMessage
 
-  let accumulatedText = ''
+    let accumulatedText = ''
 
     try {
       // 使用 fetch + ReadableStream 处理 SSE
       abortController = new AbortController()
-      const response = await fetch(`${apiUrl}?message=${encodeURIComponent(userMessage)}`, {
-        method: 'GET',
-        headers: {
-          'Accept': 'text/event-stream',
-        },
-        signal: abortController.signal,
-      })
+      const response = await fetch(
+        `${apiUrl}?message=${encodeURIComponent(userMessage)}`,
+        {
+          method: 'GET',
+          headers: {
+            Accept: 'text/event-stream'
+          },
+          signal: abortController.signal
+        }
+      )
 
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`)
       }
 
-  const reader = response.body.getReader()
+      const reader = response.body.getReader()
       const decoder = new TextDecoder()
 
       while (true) {
         const { done, value } = await reader.read()
-        
+
         if (done) {
           break
         }
-    
+
         const chunk = decoder.decode(value, { stream: true })
         const lines = chunk.split('\n')
-    
+
         for (const line of lines) {
           if (line.trim().startsWith('data: ')) {
             const dataStr = line.trim().substring(6)
@@ -183,21 +191,33 @@ export function useChat() {
               if (data.text) {
                 accumulatedText += data.text
                 updateMessage(assistantMessage.id, accumulatedText)
-                
+
                 if (onChunk) {
                   onChunk(data.text, accumulatedText)
                 }
               }
               // 2) MCP 工具调用提示（仅展示状态与名称）
-              if (Array.isArray(data.tool_calls) && data.tool_calls.length > 0) {
+              if (
+                Array.isArray(data.tool_calls) &&
+                data.tool_calls.length > 0
+              ) {
                 const names = data.tool_calls
-                  .map(tc => (tc?.function?.name || tc?.custom?.name || tc?.type || '工具'))
+                  .map(
+                    (tc) =>
+                      tc?.function?.name ||
+                      tc?.custom?.name ||
+                      tc?.type ||
+                      '工具'
+                  )
                   .filter(Boolean)
                 updateToolCalls(assistantMessage.id, names)
               }
               // 3) MCP 工具返回结果：将结果拼接到内容，并清除“调用中”提示
               if (data.result) {
-                const raw = typeof data.result === 'string' ? data.result : JSON.stringify(data.result, null, 2)
+                const raw =
+                  typeof data.result === 'string'
+                    ? data.result
+                    : JSON.stringify(data.result, null, 2)
                 const resultStr = decodeEscapedNewlines(raw)
                 accumulatedText += resultStr
                 updateMessage(assistantMessage.id, accumulatedText)
@@ -219,7 +239,6 @@ export function useChat() {
       }
 
       return accumulatedText
-
     } catch (error) {
       console.error('发送消息失败:', error)
       // 如果是用户主动中断，不视为错误，不覆盖已有内容
@@ -227,13 +246,16 @@ export function useChat() {
         finishStreaming(assistantMessage.id)
         return accumulatedText
       }
-      updateMessage(assistantMessage.id, '抱歉，发送消息时出现错误。请稍后重试。')
+      updateMessage(
+        assistantMessage.id,
+        '抱歉，发送消息时出现错误。请稍后重试。'
+      )
       finishStreaming(assistantMessage.id)
-      
+
       if (onError) {
         onError(error)
       }
-      
+
       throw error
     } finally {
       // 清理控制器
@@ -245,12 +267,18 @@ export function useChat() {
   function stopStreaming() {
     // 优先切断与后端的连接
     if (abortController) {
-      try { abortController.abort() } catch (e) { /* noop */ }
+      try {
+        abortController.abort()
+      } catch (e) {
+        /* noop */
+      }
     }
     // 立即更新 UI，停止流式动画
     if (currentStreamingMessage.value) {
       // 清除工具调用提示
-      try { updateToolCalls(currentStreamingMessage.value.id, []) } catch(_) {}
+      try {
+        updateToolCalls(currentStreamingMessage.value.id, [])
+      } catch (_) {}
       finishStreaming(currentStreamingMessage.value.id)
     }
   }
@@ -261,21 +289,21 @@ export function useChat() {
       const saved = localStorage.getItem('chat_conversations')
       if (saved) {
         const parsed = JSON.parse(saved)
-        conversations.value = parsed.map(c => ({
+        conversations.value = parsed.map((c) => ({
           ...c,
           createdAt: new Date(c.createdAt),
           updatedAt: new Date(c.updatedAt),
-          messages: c.messages.map(m => ({
+          messages: c.messages.map((m) => ({
             ...m,
             timestamp: new Date(m.timestamp)
           }))
         }))
-        
+
         if (conversations.value.length > 0) {
           switchConversation(conversations.value[0].id)
         }
       }
-      
+
       // 如果没有会话，创建一个
       if (conversations.value.length === 0) {
         createConversation()
@@ -289,7 +317,10 @@ export function useChat() {
   // 保存会话到 localStorage
   function saveConversations() {
     try {
-      localStorage.setItem('chat_conversations', JSON.stringify(conversations.value))
+      localStorage.setItem(
+        'chat_conversations',
+        JSON.stringify(conversations.value)
+      )
     } catch (error) {
       console.error('保存会话失败:', error)
     }
@@ -312,7 +343,7 @@ export function useChat() {
     messages,
     isStreaming,
     currentStreamingMessage,
-    
+
     // 方法
     createConversation,
     switchConversation,

@@ -1,31 +1,22 @@
 import { reactive, computed } from 'vue'
-import { visualizationLibs } from '../config/visualization-libs.config.js'
-import { useToast } from './useToast.js'
+import { visualizationLibs } from '@/config/visualization-libs.config'
+import { useToast } from '@/composables/useToast'
 
 const CACHE_NAME = 'htmath-lib-cache-v1'
 const STORAGE_KEY = 'htmath-lib-settings'
+const toast = useToast()
 
-// 全局状态
+// 库全局状态对象
 const state = reactive({
-  // 每个库的启用状态（持久化到 localStorage）
-  enabledLibs: new Set(),
-  // 每个库的缓存状态
-  cacheStates: {},
-  // 下载状态
-  downloading: new Set(),
-  // iframe 缓存数量
-  iframeCacheSize: 0,
-  // 是否已初始化
-  initialized: false
+  enabledLibs: new Set(), // 库启用状态
+  cacheStates: {}, // 库缓存状态
+  downloading: new Set(), // 库下载状态
+  initialized: false // 是否初始化
 })
 
-/**
- * 库缓存管理
- */
-export function useLibraryCache() {
-  const toast = useToast()
-
-  // 计算属性
+// 库缓存管理
+export const useLibraryCache = () => {
+  // 全部库信息
   const allLibs = computed(() => {
     return visualizationLibs.map((lib) => ({
       ...lib,
@@ -37,12 +28,17 @@ export function useLibraryCache() {
     }))
   })
 
+  const libBlobs = {} // 已缓存库blob地址
+
+  // 已启用数量
   const enabledCount = computed(() => state.enabledLibs.size)
 
+  // 已缓存数量
   const cachedCount = computed(
     () => Object.values(state.cacheStates).filter((s) => s?.cached).length
   )
 
+  // 总缓存数量
   const totalCacheSize = computed(() =>
     Object.values(state.cacheStates).reduce(
       (acc, s) => acc + (s?.cached ? s.size || 0 : 0),
@@ -52,7 +48,7 @@ export function useLibraryCache() {
 
   // 初始化：加载本地存储的设置和缓存状态
   async function initialize() {
-    if (state.initialized) return
+    if (state.initialized) return // 已初始化
 
     try {
       // 加载启用状态
@@ -69,7 +65,6 @@ export function useLibraryCache() {
 
       // 检查缓存状态
       await updateCacheStates()
-
       state.initialized = true
     } catch (error) {
       console.error('初始化库管理器失败:', error)
@@ -92,20 +87,13 @@ export function useLibraryCache() {
 
   // 切换库的启用状态
   function toggleLibrary(libId, enabled) {
-    if (enabled) {
-      state.enabledLibs.add(libId)
-    } else {
-      state.enabledLibs.delete(libId)
-    }
+    if (enabled) state.enabledLibs.add(libId)
+    else state.enabledLibs.delete(libId)
     saveSettings()
 
     const lib = visualizationLibs.find((l) => l.id === libId)
-    if (lib) {
-      toast.success(`${lib.name} 已${enabled ? '启用' : '禁用'}`)
-    }
+    if (lib) toast.success(`${lib.name} 已${enabled ? '启用' : '禁用'}`)
   }
-
-  const libBlobs = {}
 
   // 更新所有库的缓存状态
   async function updateCacheStates() {
@@ -189,16 +177,11 @@ export function useLibraryCache() {
 
       // 创建新的 blob URL
       const blobUrl = URL.createObjectURL(blob)
-
       state.cacheStates[libId] = {
         cached: true,
         size: blob.size,
         blobUrl,
         error: ''
-      }
-
-      if (!libBlobs) {
-        libBlobs = {}
       }
       libBlobs[libId] = blobUrl
 
@@ -234,14 +217,12 @@ export function useLibraryCache() {
         try {
           URL.revokeObjectURL(cacheState.blobUrl)
         } catch (e) {
-          // 忽略清理错误
+          console.log(e.message || '清理失败')
         }
       }
 
       // 从全局 blob 映射中删除
-      if (libBlobs) {
-        delete libBlobs[libId]
-      }
+      delete libBlobs[libId]
 
       state.cacheStates[libId] = {
         cached: false,
@@ -255,26 +236,6 @@ export function useLibraryCache() {
     } catch (error) {
       toast.error(`删除 ${lib.name} 缓存失败: ${error.message}`)
       return false
-    }
-  }
-
-  // 下载所有启用的库
-  async function downloadAllEnabledLibs() {
-    const enabledLibIds = Array.from(state.enabledLibs)
-    const promises = enabledLibIds.map((id) => downloadLibrary(id))
-
-    toast.info(`开始下载 ${enabledLibIds.length} 个库...`)
-
-    const results = await Promise.allSettled(promises)
-    const success = results.filter(
-      (r) => r.status === 'fulfilled' && r.value
-    ).length
-    const failed = results.length - success
-
-    if (failed === 0) {
-      toast.success(`所有 ${success} 个库下载完成`)
-    } else {
-      toast.warning(`${success} 个库下载成功，${failed} 个失败`)
     }
   }
 
@@ -293,7 +254,7 @@ export function useLibraryCache() {
           try {
             URL.revokeObjectURL(cacheState.blobUrl)
           } catch (e) {
-            // 忽略清理错误
+            console.log('清理失败')
           }
         }
 
@@ -308,13 +269,80 @@ export function useLibraryCache() {
       await Promise.all(promises)
 
       // 清空全局 blob 映射
-      if (libBlobs) {
-        libBlobs = {}
-      }
+      libBlobs.length = 0
 
       toast.success('所有库缓存已清空')
     } catch (error) {
       toast.error('清空库缓存失败: ' + error.message)
+    }
+  }
+
+  // 下载所有启用的库
+  async function downloadAllEnabledLibs() {
+    const enabledLibIds = Array.from(state.enabledLibs)
+    if (enabledLibIds.length === 0) return toast.info('没有启用的库需要下载')
+
+    // 过滤已缓存的库，避免重复下载
+    const unCachedLibIds = enabledLibIds.filter((id) => {
+      const cacheState = state.cacheStates[id]
+      return !cacheState?.cached && !cacheState?.isDownloading
+    })
+
+    if (unCachedLibIds.length === 0)
+      return toast.success('所有启用的库已缓存完成')
+
+    // 显示总进度提示
+    const total = unCachedLibIds.length
+    const progressToast = toast.loading(`正在下载（0/${total}）...`, {
+      duration: 0, // 不自动关闭
+      forbidClick: true // 禁止点击关闭
+    })
+
+    try {
+      // 限制并发下载（避免请求拥堵）
+      const concurrencyLimit = 3
+      let completed = 0
+      const results = []
+
+      // 分批处理下载任务
+      for (let i = 0; i < unCachedLibIds.length; i += concurrencyLimit) {
+        const batch = unCachedLibIds.slice(i, i + concurrencyLimit)
+        const batchPromises = batch.map((id) =>
+          downloadLibrary(id).then((result) => ({ id, result }))
+        )
+
+        // 等待当前批次完成后再处理下一批
+        const batchResults = await Promise.allSettled(batchPromises)
+        results.push(...batchResults)
+
+        // 更新已完成数量和进度提示
+        completed += batch.length
+        progressToast.message = `正在下载（${completed}/${total}）...`
+      }
+
+      // 统计结果
+      const success = results.filter(
+        (r) => r.status === 'fulfilled' && r.value.result
+      ).length
+      const failed = total - success
+      const failedIds = results
+        .filter((r) => r.status !== 'fulfilled' || !r.value.result)
+        .map((r) => r.value?.id || '未知库')
+
+      // 关闭进度提示，显示最终结果
+      progressToast.close()
+      if (failed === 0) {
+        toast.success(`所有 ${success} 个库下载完成`)
+      } else {
+        toast.warning(
+          `${success} 个库下载成功，${failed} 个失败\n` +
+            `失败库ID: ${failedIds.join(', ')}`,
+          { duration: 6000 } // 延长显示时间
+        )
+      }
+    } catch (error) {
+      progressToast.close()
+      toast.error(`下载任务异常终止: ${error.message}`)
     }
   }
 
@@ -349,10 +377,10 @@ export function useLibraryCache() {
   return {
     // 状态
     allLibs,
+    libBlobs,
     enabledCount,
     cachedCount,
     totalCacheSize,
-    libBlobs,
     initialized: computed(() => state.initialized),
 
     // 方法
@@ -360,8 +388,8 @@ export function useLibraryCache() {
     toggleLibrary,
     downloadLibrary,
     deleteLibraryCache,
-    downloadAllEnabledLibs,
     clearAllLibraryCache,
+    downloadAllEnabledLibs,
     exportConfig,
     updateCacheStates
   }
