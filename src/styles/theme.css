@@ -4,6 +4,7 @@
   --bg-elev-1: #111111;
   --bg-elev-2: #141414;
   --bg-elev-3: #181818;
+  --bg-dim: #fafafa10;
   --fg: #f3f3f3;
   --fg-muted: #bdbdbd;
   --fg-dim: #9a9a9a;
@@ -11,13 +12,13 @@
   --border-strong: #2a2a2a;
   --accent: #ffffff; /* mono accent */
   --accent-weak: #dcdcdc;
-  --shadow: 0 8px 30px rgba(0,0,0,0.35);
+  --shadow: 0 8px 30px rgba(0, 0, 0, 0.35);
 
   /* Selection & code surfaces */
   --select-bg: #2a2a2a;
   --select-fg: var(--fg);
   --code-bg: #1e1e1e;
-  --code-inline-bg: rgba(100,100,100,0.3);
+  --code-inline-bg: rgba(100, 100, 100, 0.3);
   --code-border: #3a3a3a;
 
   --radius-sm: 8px;
@@ -34,18 +35,20 @@
 
   --container-max: 1200px;
 
-  --font-sans: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
-  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  --font-sans: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto,
+    Helvetica, Arial, 'Apple Color Emoji', 'Segoe UI Emoji';
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+    'Liberation Mono', 'Courier New', monospace;
 
-  --focus-ring: 0 0 0 3px rgba(255,255,255,0.18);
+  --focus-ring: 0 0 0 3px rgba(255, 255, 255, 0.18);
 
   /* motion */
-  --ease-in: cubic-bezier(.4,0,1,1);
-  --ease-out: cubic-bezier(.2,.8,.2,1);
-  --ease-in-out: cubic-bezier(.4,0,.2,1);
-  --dur-fast: .15s;
-  --dur-base: .25s;
-  --dur-slow: .4s;
+  --ease-in: cubic-bezier(0.4, 0, 1, 1);
+  --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+  --dur-fast: 0.15s;
+  --dur-base: 0.25s;
+  --dur-slow: 0.4s;
 }
 
 /* Light scheme fallback if user prefers light */
@@ -55,6 +58,7 @@
     --bg-elev-1: #ffffff;
     --bg-elev-2: #f6f6f6;
     --bg-elev-3: #f0f0f0;
+    --bg-dim: #0b0b0b10;
     --fg: #111;
     --fg-muted: #555;
     --fg-dim: #767676;
@@ -62,17 +66,18 @@
     --border-strong: #e1e1e1;
     --accent: #111;
     --accent-weak: #222;
-    --shadow: 0 8px 30px rgba(0,0,0,0.06);
-    --focus-ring: 0 0 0 3px rgba(0,0,0,0.12);
+    --shadow: 0 8px 30px rgba(0, 0, 0, 0.06);
+    --focus-ring: 0 0 0 3px rgba(0, 0, 0, 0.12);
     --select-bg: #d1d5db;
     --select-fg: var(--fg);
     --code-bg: #f6f8fa;
-    --code-inline-bg: rgba(175,184,193,0.25);
-    --code-border: rgba(0,0,0,0.08);
+    --code-inline-bg: rgba(175, 184, 193, 0.25);
+    --code-border: rgba(0, 0, 0, 0.08);
   }
 }
 
-html, body {
+html,
+body {
   background: var(--bg);
   color: var(--fg);
   font-family: var(--font-sans);
@@ -88,6 +93,7 @@ html, body {
   --bg-elev-1: #111111;
   --bg-elev-2: #141414;
   --bg-elev-3: #181818;
+  --bg-dim: #fafafa15;
   --fg: #f3f3f3;
   --fg-muted: #bdbdbd;
   --fg-dim: #9a9a9a;
@@ -95,12 +101,12 @@ html, body {
   --border-strong: #2a2a2a;
   --accent: #ffffff;
   --accent-weak: #dcdcdc;
-  --shadow: 0 8px 30px rgba(0,0,0,0.35);
-  --focus-ring: 0 0 0 3px rgba(255,255,255,0.18);
+  --shadow: 0 8px 30px rgba(0, 0, 0, 0.35);
+  --focus-ring: 0 0 0 3px rgba(255, 255, 255, 0.18);
   --select-bg: #2a2a2a;
   --select-fg: var(--fg);
   --code-bg: #1e1e1e;
-  --code-inline-bg: rgba(100,100,100,0.3);
+  --code-inline-bg: rgba(100, 100, 100, 0.3);
   --code-border: #3a3a3a;
 }
 
@@ -109,6 +115,7 @@ html, body {
   --bg-elev-1: #ffffff;
   --bg-elev-2: #f6f6f6;
   --bg-elev-3: #f0f0f0;
+  --bg-dim: #0b0b0b10;
   --fg: #111;
   --fg-muted: #555;
   --fg-dim: #767676;
@@ -116,13 +123,13 @@ html, body {
   --border-strong: #e1e1e1;
   --accent: #111;
   --accent-weak: #222;
-  --shadow: 0 8px 30px rgba(0,0,0,0.06);
-  --focus-ring: 0 0 0 3px rgba(0,0,0,0.12);
+  --shadow: 0 8px 30px rgba(0, 0, 0, 0.06);
+  --focus-ring: 0 0 0 3px rgba(0, 0, 0, 0.12);
   --select-bg: #d1d5db;
   --select-fg: var(--fg);
   --code-bg: #f6f8fa;
-  --code-inline-bg: rgba(175,184,193,0.25);
-  --code-border: rgba(0,0,0,0.08);
+  --code-inline-bg: rgba(175, 184, 193, 0.25);
+  --code-border: rgba(0, 0, 0, 0.08);
 }
 
 /* Common utilities */
@@ -143,9 +150,16 @@ html, body {
   border: 1px solid var(--border);
 }
 
-.u-scrollbar::-webkit-scrollbar { width: 5px; height: 8px; }
-.u-scrollbar::-webkit-scrollbar-track { background: transparent; }
-.u-scrollbar::-webkit-scrollbar-thumb { border-radius: 8px; }
+.u-scrollbar::-webkit-scrollbar {
+  width: 5px;
+  height: 8px;
+}
+.u-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.u-scrollbar::-webkit-scrollbar-thumb {
+  border-radius: 8px;
+}
 
 /* Focus styles */
 :focus-visible {
@@ -154,8 +168,12 @@ html, body {
 }
 
 /* Link, inputs, buttons base */
-a { color: var(--fg); text-decoration: none; }
-input, textarea {
+a {
+  color: var(--fg);
+  text-decoration: none;
+}
+input,
+textarea {
   background: var(--bg-elev-1);
   color: var(--fg);
   border: 1px solid var(--border);
@@ -168,5 +186,10 @@ button {
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
 }
-button:hover { border-color: var(--border-strong); }
-button:disabled { opacity: 0.6; cursor: not-allowed; }
+button:hover {
+  border-color: var(--border-strong);
+}
+button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}

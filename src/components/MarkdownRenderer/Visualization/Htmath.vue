@@ -1,13 +1,14 @@
 <script setup>
-import { nextTick, useTemplateRef, watch } from 'vue'
-import { visualizationLibs } from '../../../config/visualization-libs.config' // 可视化库配置
-import { useLibraryCache } from '../../../composables/useLibraryCache' // 缓存管理器
+import { ref, nextTick, useTemplateRef, watch } from 'vue'
+import { visualizationLibs } from '@/config/visualization-libs.config' // 可视化库配置
+import { useLibraryCache } from '@/composables/useLibraryCache' // 缓存管理器
 
 const { libBlobs } = useLibraryCache()
 
 const props = defineProps({ html: String })
 const iframeRef = useTemplateRef('iframeRef')
 const emit = defineEmits(['updateHeight'])
+const loading = ref(true)
 
 // 替换html中的库引用为缓存的blobUrl
 function replaceWithCachedLibs(html) {
@@ -49,6 +50,8 @@ function handleRender(iframe) {
     iframeDoc.close()
 
     const handleResize = () => {
+      loading.value = false
+
       let lastHeight = 0
       let stableCount = -1 // 高度监听器
       // 启动定时器监测高度变化
@@ -59,17 +62,17 @@ function handleRender(iframe) {
           stableCount = -1
           lastHeight = currentHeight
           iframe.style.height = currentHeight + 'px'
+        }
+        stableCount++
+
+        if (stableCount >= 5) {
+          clearInterval(heightCheckTimer)
+          heightCheckTimer = null
           nextTick(() => {
             emit('updateHeight')
           })
         }
-        stableCount++
-
-        if (stableCount >= 10) {
-          clearInterval(heightCheckTimer)
-          heightCheckTimer = null
-        }
-      }, 500)
+      }, 100)
     }
 
     // 监听iframe内容加载完成事件
@@ -83,6 +86,7 @@ watch(
   () => iframeRef.value,
   (iframe) => {
     if (!iframe) return
+    loading.value = true
     handleRender(iframe)
   },
   { immediate: true } // 初始加载时立即检查
@@ -90,10 +94,58 @@ watch(
 </script>
 
 <template>
-  <iframe
-    ref="iframeRef"
-    width="100%"
-    frameborder="0"
-    style="transition: height 0.3s ease"
-  ></iframe>
+  <div class="htmath-container">
+    <div class="loading" v-if="loading">
+      <div class="loading-indicator">
+        <div class="spinner"></div>
+        <span>正在加载可视化</span>
+      </div>
+    </div>
+    <iframe
+      ref="iframeRef"
+      width="100%"
+      height="0"
+      frameborder="0"
+      style="transition: height 0.3s ease; background-color: #fff"
+    ></iframe>
+  </div>
 </template>
+
+<style scoped>
+/* iframe 加载动画 */
+.loading {
+  width: fit-content;
+  margin: auto;
+  padding-top: 20px;
+}
+.loading-indicator {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: fit-content;
+  padding: 10px 14px;
+  background: rgba(240, 240, 240, 0.8);
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  border-radius: 20px;
+  color: #666;
+  font-size: 14px;
+
+  .spinner {
+    width: 16px;
+    height: 16px;
+    border: 2px solid #ccc;
+    border-top-color: #1a73e8;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+  }
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+</style>

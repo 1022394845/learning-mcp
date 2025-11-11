@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted, nextTick, watch } from 'vue'
+import { ref, onMounted, nextTick, watch, provide, computed } from 'vue'
 import ChatSidebar from '@/components/ChatSidebar.vue'
 import ToolBar from '@/components/ToolBar.vue'
 import MarkdownRenderer from '@/components/MarkdownRenderer/MarkdownRenderer.vue'
@@ -9,6 +9,7 @@ import { useToast } from '@/composables/useToast'
 import { useConfirm } from '@/composables/useConfirm'
 import { useLibraryCache } from '@/composables/useLibraryCache'
 import { markdownToHtml } from '@/utils/markdownToHtml'
+import { debounce } from '@/utils/debounce'
 
 // 聊天数据
 const {
@@ -39,6 +40,12 @@ const sidebarOpen = ref(false)
 const theme = ref(localStorage.getItem('theme') || '') // ''=跟随系统, 或 'light'/'dark'
 const toast = useToast()
 const confirmDialog = useConfirm()
+
+provide('theme', theme) // 共享主题配置
+const currentThemeTip = computed(() => {
+  if (theme.value === '') return '跟随系统'
+  return theme.value === 'light' ? '浅色' : '深色'
+})
 
 // 自动保存
 watch(
@@ -211,11 +218,11 @@ function handleKeyDown(event) {
 }
 
 // 滚动到底部
-function scrollToBottom() {
+const scrollToBottom = debounce(() => {
   if (messageContainer.value) {
     messageContainer.value.scrollTop = messageContainer.value.scrollHeight
   }
-}
+})
 
 // 格式化时间
 function formatMessageTime(timestamp) {
@@ -363,7 +370,7 @@ onMounted(() => {
             <button
               class="header-btn"
               @click="toggleTheme()"
-              :title="`切换主题：当前${theme === 'light' ? '浅色' : '深色'}`"
+              :title="`当前主题：${currentThemeTip}`"
             >
               <svg
                 width="16"
